@@ -5,7 +5,7 @@ use log::{debug, error};
 use crate::{
     ast::{
         ArrayExpression, BinaryOperationExpression, BlockExpression, CallExpression,
-        ClosureExpression, DictionaryExpression, EnvVariableExpression, Expression,
+        ClosureExpression, DictionaryExpression, Expression,
         GroupedExpression, IdentifierExpression, InExpression, IndexExpression, KeyValueExpress,
         LiteralExpression, MatchesExpression, UnaryOperationExpression,
     },
@@ -104,12 +104,6 @@ impl Parser {
             Some(Token::Symbol(Symbol::Not)) => Ok(Expression::UnaryOperation(
                 UnaryOperationExpression::Not(Box::new(self.parse_subexpr(Precedence::Prefix)?)),
             )),
-            Some(Token::Symbol(Symbol::Dollar)) => {
-                self.consume_token()?;
-                Ok(Expression::EnvVariable(EnvVariableExpression {
-                    name: self.parse_identifier()?.name,
-                }))
-            }
             _ => self.parse_primary(),
         }
     }
@@ -292,8 +286,7 @@ impl Parser {
                 }
             },
             Some(Token::Keyword(kw)) => match kw {
-                Keyword::In => Precedence::In,
-                Keyword::Matches => Precedence::Matches,
+                Keyword::In | Keyword::Matches => Precedence::Judge,
                 _ => Precedence::Lowest,
             },
             _ => Precedence::Lowest,
@@ -434,8 +427,7 @@ pub enum Precedence {
     BitShift,
     Term,
     Factor,
-    Matches,
-    In,
+    Judge,
     As,
     Prefix,
     Postfix,
@@ -473,7 +465,7 @@ mod test {
         let expr = Parser::parse(r#"hello in {hello: "world"}"#).unwrap();
         println!("{:?}", expr);
 
-        let expr = Parser::parse(r#"hello in $req.headers"#).unwrap();
+        let expr = Parser::parse(r#"hello in req.headers"#).unwrap();
         println!("{:?}", expr);
     }
 }

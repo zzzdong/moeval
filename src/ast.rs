@@ -1,6 +1,7 @@
+use std::fmt;
+
 #[derive(Debug)]
 pub enum Expression {
-    EnvVariable(EnvVariableExpression),
     Identifier(IdentifierExpression),
     Literal(LiteralExpression),
     Grouped(GroupedExpression),
@@ -15,12 +16,6 @@ pub enum Expression {
     Matches(MatchesExpression),
     Closure(ClosureExpression),
     Block(BlockExpression),
-
-}
-
-#[derive(Debug)]
-pub struct EnvVariableExpression {
-    pub name: String,
 }
 
 #[derive(Debug)]
@@ -38,7 +33,18 @@ pub enum LiteralExpression {
     Null,
 }
 
-
+impl fmt::Display for LiteralExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LiteralExpression::Char(c) => write!(f, "{}", c),
+            LiteralExpression::String(s) => write!(f, "{}", s),
+            LiteralExpression::Integer(i) => write!(f, "{}", i),
+            LiteralExpression::Float(ff) => write!(f, "{}", ff),
+            LiteralExpression::Boolean(b) => write!(f, "{}", b),
+            LiteralExpression::Null => write!(f, "null"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct GroupedExpression(pub Box<Expression>);

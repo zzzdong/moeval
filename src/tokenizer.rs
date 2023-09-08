@@ -273,6 +273,19 @@ impl TryInto<BinaryOperation> for Keyword {
     }
 }
 
+impl TryInto<LiteralExpression> for Keyword {
+    type Error = TokenError;
+
+    fn try_into(self) -> Result<LiteralExpression, Self::Error> {
+        match self {
+            Keyword::True => Ok(LiteralExpression::Boolean(true)),
+            Keyword::False => Ok(LiteralExpression::Boolean(false)),
+            Keyword::Null => Ok(LiteralExpression::Null),
+            _ => Err(TokenError::new(format!("{:?} not a literal expression", self))),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Tokenizer<'i> {
     input: &'i str,
