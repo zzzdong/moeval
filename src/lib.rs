@@ -1,6 +1,8 @@
-mod tokenizer;
 mod ast;
+mod compiler;
+mod opcode;
 mod parser;
+mod tokenizer;
 mod value;
 mod vm;
 

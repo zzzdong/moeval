@@ -10,7 +10,7 @@ pub enum Token {
     Literal(Literal),
     Symbol(Symbol),
     Whitespace,
-    EOF,
+    Eof,
 }
 
 impl Token {
@@ -44,21 +44,17 @@ impl fmt::Display for Token {
             Token::Literal(lit) => write!(f, "Literal({:?})", lit),
             Token::Symbol(sym) => write!(f, "Symbol{:?}", sym.as_str()),
             Token::Whitespace => write!(f, "Whitespace"),
-            Token::EOF => write!(f, "EOF"),
+            Token::Eof => write!(f, "EOF"),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
-    name: String,
+    pub(crate) name: String,
 }
 
-impl Into<IdentifierExpression> for Identifier {
-    fn into(self) -> IdentifierExpression {
-        IdentifierExpression { name: self.name }
-    }
-}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -66,17 +62,6 @@ pub enum Literal {
     Float(f64),
     String(String),
     Char(char),
-}
-
-impl Into<LiteralExpression> for Literal {
-    fn into(self) -> LiteralExpression {
-        match self {
-            Literal::Char(c) => LiteralExpression::Char(c),
-            Literal::String(s) => LiteralExpression::String(s),
-            Literal::Integer(i) => LiteralExpression::Integer(i),
-            Literal::Float(f) => LiteralExpression::Float(f),
-        }
-    }
 }
 
 macro_rules! define_symbols {
@@ -196,7 +181,7 @@ impl TryInto<BinaryOperation> for Symbol {
             Symbol::Gt => Ok(BinaryOperation::GreaterThan),
             Symbol::LtEq => Ok(BinaryOperation::LessThanOrEqual),
             Symbol::GtEq => Ok(BinaryOperation::GreaterThanOrEqual),
-            Symbol::Dot => Ok(BinaryOperation::Access),
+            Symbol::Dot => Ok(BinaryOperation::Member),
 
             _ => Err(TokenError::new(format!("{:?} not a binary operator", self))),
         }
@@ -281,7 +266,10 @@ impl TryInto<LiteralExpression> for Keyword {
             Keyword::True => Ok(LiteralExpression::Boolean(true)),
             Keyword::False => Ok(LiteralExpression::Boolean(false)),
             Keyword::Null => Ok(LiteralExpression::Null),
-            _ => Err(TokenError::new(format!("{:?} not a literal expression", self))),
+            _ => Err(TokenError::new(format!(
+                "{:?} not a literal expression",
+                self
+            ))),
         }
     }
 }
@@ -303,7 +291,7 @@ impl<'i> Tokenizer<'i> {
     }
 
     fn next(&mut self) -> Result<Pair<'i>, TokenError> {
-        while let Some(c) = self.peek_char() {
+        if let Some(c) = self.peek_char() {
             match c {
                 '"' => return self.eat_string(),
                 c if c.is_whitespace() => return self.eat_whitespace(),
@@ -328,7 +316,7 @@ impl<'i> Tokenizer<'i> {
             }
         }
 
-        Ok(Pair::new(Token::EOF, self.new_span(self.pos)))
+        Ok(Pair::new(Token::Eof, self.new_span(self.pos)))
     }
 
     fn eat_whitespace(&mut self) -> Result<Pair<'i>, TokenError> {
@@ -591,7 +579,7 @@ impl<'i> Iterator for Pairs<'i> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
             Ok(pair) => {
-                if pair.token == Token::EOF {
+                if pair.token == Token::Eof {
                     None
                 } else if pair.token == Token::Whitespace {
                     self.next()
@@ -623,7 +611,7 @@ impl<'i> Iterator for Tokens<'i> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
             Ok(pair) => {
-                if pair.token == Token::EOF {
+                if pair.token == Token::Eof {
                     None
                 } else if pair.token == Token::Whitespace {
                     self.next()
@@ -689,7 +677,7 @@ mod test {
             loop {
                 let pair = tokenizer.next().unwrap();
                 println!("pair: {pair:?}");
-                if pair.token == Token::EOF {
+                if pair.token == Token::Eof {
                     break;
                 }
 

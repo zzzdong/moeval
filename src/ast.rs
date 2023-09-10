@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::tokenizer::{Literal, Identifier};
+
 #[derive(Debug)]
 pub enum Expression {
     Identifier(IdentifierExpression),
@@ -21,6 +23,14 @@ pub enum Expression {
 #[derive(Debug)]
 pub struct IdentifierExpression {
     pub name: String,
+}
+
+impl From<Identifier> for IdentifierExpression {
+    fn from(identifier: Identifier) -> Self {
+        IdentifierExpression {
+            name: identifier.name,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -45,6 +55,18 @@ impl fmt::Display for LiteralExpression {
         }
     }
 }
+
+impl From<Literal> for LiteralExpression {
+    fn from(lit: Literal) -> Self {
+        match lit {
+            Literal::Char(c) => LiteralExpression::Char(c),
+            Literal::String(s) => LiteralExpression::String(s),
+            Literal::Integer(i) => LiteralExpression::Integer(i),
+            Literal::Float(ff) => LiteralExpression::Float(ff),
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct GroupedExpression(pub Box<Expression>);
@@ -79,7 +101,7 @@ pub enum BinaryOperation {
     LessThanOrEqual,
     And,
     Or,
-    Access,
+    Member,
     In,
     Matches,
     As,

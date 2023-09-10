@@ -5,9 +5,9 @@ use log::{debug, error};
 use crate::{
     ast::{
         ArrayExpression, BinaryOperationExpression, BlockExpression, CallExpression,
-        ClosureExpression, DictionaryExpression, Expression,
-        GroupedExpression, IdentifierExpression, InExpression, IndexExpression, KeyValueExpress,
-        LiteralExpression, MatchesExpression, UnaryOperationExpression,
+        ClosureExpression, DictionaryExpression, Expression, GroupedExpression,
+        IdentifierExpression, InExpression, IndexExpression, KeyValueExpress, LiteralExpression,
+        MatchesExpression, UnaryOperationExpression,
     },
     tokenizer::{Keyword, Pair, Pairs, Symbol, Token, TokenError},
 };
@@ -156,11 +156,11 @@ impl Parser {
             },
             Token::Keyword(kw) => {
                 if let Ok(op) = kw.try_into() {
-                    return Ok(Expression::BinaryOperation(BinaryOperationExpression {
+                    Ok(Expression::BinaryOperation(BinaryOperationExpression {
                         op,
                         left: Box::new(expr),
                         right: Box::new(self.parse_subexpr(precedence)?),
-                    }));
+                    }))
                 } else {
                     unreachable!("unknown keyword in infix expression: {:?}", kw);
                 }
@@ -399,10 +399,7 @@ impl Parser {
     /// Check the next token if it matches the expected token, otherwise return false
     #[must_use]
     fn test_next(&mut self, expected: &Token) -> bool {
-        match self.peek_token() {
-            Ok(Some(tok)) if &tok.token == expected => true,
-            _ => false,
-        }
+        matches!(self.peek_token(), Ok(Some(tok)) if &tok.token == expected)
     }
 
     fn is_eof(&self) -> bool {
