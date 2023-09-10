@@ -54,8 +54,6 @@ pub struct Identifier {
     pub(crate) name: String,
 }
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Integer(i64),

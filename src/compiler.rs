@@ -185,6 +185,34 @@ impl IRCompiler {
                     }
                 }
             }
+            Expression::UnaryOperation(UnaryOperationExpression::Negation(expr)) => {
+                let operand = self.compile_expr(*expr);
+                let dest = self.create_var();
+                self.emit(OpCode::Negate, &[dest, operand]);
+                dest
+            }
+            Expression::Grouped(GroupedExpression(expr)) => self.compile_expr(*expr),
+            Expression::Array(ArrayExpression { elements }) => {
+                let array = self.create_var();
+                self.emit(OpCode::NewArray, &[array]);
+                for element in elements {
+                    let item = self.compile_expr(element);
+                    self.emit(OpCode::ArrayPush, &[array, item]);
+                }
+                array
+            }
+            Expression::Dictionary(DictionaryExpression { elements }) => {
+                let dict = self.create_var();
+                self.emit(OpCode::NewDictionary, &[dict]);
+                for kv in elements {
+                    let key = self.create_var();
+                    let idx = self.insert_static(kv.key.name);
+                    self.emit(OpCode::LoadStatic, &[key, Operand::Static(idx)]);
+                    let value = self.compile_expr(*kv.value);
+                    self.emit(OpCode::DictionaryPut, &[dict, key, value]);
+                }
+                dict
+            }
 
             e => {
                 unreachable!("expr {:?}", e);

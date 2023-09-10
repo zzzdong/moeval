@@ -11,6 +11,7 @@ pub enum OpCode {
     Div,
     Mod,
     Pow,
+    Negate,
     And,
     Or,
     Not,
@@ -24,6 +25,10 @@ pub enum OpCode {
     IfLessOrEqual,
     IfGreater,
     IfGreaterOrEqual,
+    NewArray,
+    ArrayPush,
+    NewDictionary,
+    DictionaryPut,
     Call,
     Return,
 }

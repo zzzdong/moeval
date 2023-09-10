@@ -96,13 +96,10 @@ impl Parser {
 
     fn parse_prefix(&mut self) -> Result<Expression, ParseError> {
         match self.peek_token()?.as_deref() {
-            Some(Token::Symbol(Symbol::Minus)) => Ok(Expression::UnaryOperation(
+            Some(Token::Symbol(Symbol::Minus)) | Some(Token::Symbol(Symbol::Not)) => Ok(Expression::UnaryOperation(
                 UnaryOperationExpression::Negation(Box::new(
                     self.parse_subexpr(Precedence::Prefix)?,
                 )),
-            )),
-            Some(Token::Symbol(Symbol::Not)) => Ok(Expression::UnaryOperation(
-                UnaryOperationExpression::Not(Box::new(self.parse_subexpr(Precedence::Prefix)?)),
             )),
             _ => self.parse_primary(),
         }

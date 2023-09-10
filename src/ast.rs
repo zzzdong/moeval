@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::tokenizer::{Literal, Identifier};
+use crate::tokenizer::{Identifier, Literal};
 
 #[derive(Debug)]
 pub enum Expression {
@@ -67,14 +67,12 @@ impl From<Literal> for LiteralExpression {
     }
 }
 
-
 #[derive(Debug)]
 pub struct GroupedExpression(pub Box<Expression>);
 
 #[derive(Debug)]
 pub enum UnaryOperationExpression {
     Negation(Box<Expression>),
-    Not(Box<Expression>),
     Try(Box<Expression>),
 }
 
