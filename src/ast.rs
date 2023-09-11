@@ -73,6 +73,7 @@ pub struct GroupedExpression(pub Box<Expression>);
 #[derive(Debug)]
 pub enum UnaryOperationExpression {
     Negation(Box<Expression>),
+    Not(Box<Expression>),
     Try(Box<Expression>),
 }
 
