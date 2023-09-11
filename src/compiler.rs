@@ -3,8 +3,8 @@ use std::{
     fmt,
 };
 
-use crate::ast::*;
 use crate::opcode::OpCode;
+use crate::{ast::*, value::Value};
 
 #[derive(Debug, Clone)]
 struct IROpCode {
@@ -25,11 +25,9 @@ impl fmt::Display for IROpCode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Operand {
-    Static(usize),
-    ImmedI(i64),
-    ImmedF(f64),
+    Immed(Value),
     Register(usize),
     Var(usize), // for ir pass
     None,
@@ -38,25 +36,13 @@ enum Operand {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operand::Static(i) => write!(f, "s{}", i),
-            Operand::ImmedI(i) => write!(f, "{}", i),
-            Operand::ImmedF(ff) => write!(f, "{}", ff),
+            Operand::Immed(Value) => write!(f, "{}", Value),
             Operand::Register(i) => write!(f, "r{}", i),
             Operand::Var(i) => write!(f, "v{}", i),
             Operand::None => write!(f, ""),
         }
     }
 }
-
-// impl From<LiteralExpression> for Operand {
-//     fn from(expr: LiteralExpression) -> Self {
-//         match expr {
-//             LiteralExpression::Literal(Literal::Integer(i)) => Operand::ImmedI(i),
-//             LiteralExpression::Literal(Literal::Float(f)) => Operand::ImmedF(f),
-//             _ => panic!("not a literal expression"),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 pub struct IRVar(usize);
@@ -150,8 +136,7 @@ impl IRCompiler {
                 Some(var) => Operand::Var(var.0),
                 None => {
                     let dest = self.create_var();
-                    let idx = self.insert_static(name);
-                    self.emit(OpCode::LoadStatic, &[dest, Operand::Static(idx)]);
+                    self.emit(OpCode::LoadEnv, &[dest.clone(), Operand::Immed(Value::String(name))]);
 
                     dest
                 }
@@ -161,13 +146,9 @@ impl IRCompiler {
                     BinaryOperation::Member => {
                         let lhs = self.compile_expr(*left);
                         if let Expression::Identifier(IdentifierExpression { name }) = *right {
-                            // load field name
-                            let field_name = self.create_var();
-                            let idx = self.insert_static(name);
-                            self.emit(OpCode::LoadStatic, &[field_name, Operand::Static(idx)]);
                             // load member
                             let dest = self.create_var();
-                            self.emit(OpCode::LoadMember, &[dest, lhs, field_name]);
+                            self.emit(OpCode::LoadMember, &[dest.clone(), lhs, Operand::Immed(Value::String(name))]);
                             dest
                         } else {
                             unreachable!("unexpect rhs{:?} on access", right);
@@ -179,7 +160,7 @@ impl IRCompiler {
                         let op = OpCode::try_from(op).unwrap();
                         let dest = self.create_var();
 
-                        self.emit(op, &[dest, lhs, rhs]);
+                        self.emit(op, &[dest.clone(), lhs, rhs]);
 
                         dest
                     }
@@ -188,28 +169,26 @@ impl IRCompiler {
             Expression::UnaryOperation(UnaryOperationExpression::Negation(expr)) => {
                 let operand = self.compile_expr(*expr);
                 let dest = self.create_var();
-                self.emit(OpCode::Negate, &[dest, operand]);
+                self.emit(OpCode::Negate, &[dest.clone(), operand]);
                 dest
             }
             Expression::Grouped(GroupedExpression(expr)) => self.compile_expr(*expr),
             Expression::Array(ArrayExpression { elements }) => {
                 let array = self.create_var();
-                self.emit(OpCode::NewArray, &[array]);
+                self.emit(OpCode::NewArray, &[array.clone()]);
                 for element in elements {
                     let item = self.compile_expr(element);
-                    self.emit(OpCode::ArrayPush, &[array, item]);
+                    self.emit(OpCode::ArrayPush, &[array.clone(), item]);
                 }
                 array
             }
             Expression::Dictionary(DictionaryExpression { elements }) => {
                 let dict = self.create_var();
-                self.emit(OpCode::NewDictionary, &[dict]);
+                self.emit(OpCode::NewDictionary, &[dict.clone()]);
                 for kv in elements {
-                    let key = self.create_var();
-                    let idx = self.insert_static(kv.key.name);
-                    self.emit(OpCode::LoadStatic, &[key, Operand::Static(idx)]);
+                    let key = Operand::Immed(Value::String(kv.key.name));
                     let value = self.compile_expr(*kv.value);
-                    self.emit(OpCode::DictionaryPut, &[dict, key, value]);
+                    self.emit(OpCode::DictionaryPut, &[dict.clone(), key, value]);
                 }
                 dict
             }
@@ -227,16 +206,12 @@ impl IRCompiler {
 
     fn create_literal_operand(&mut self, lit: LiteralExpression) -> Operand {
         match lit {
-            LiteralExpression::Null => Operand::ImmedI(0),
-            LiteralExpression::Boolean(true) => Operand::ImmedI(0),
-            LiteralExpression::Boolean(false) => Operand::ImmedI(1),
-            LiteralExpression::Integer(i) => Operand::ImmedI(i),
-            LiteralExpression::Float(f) => Operand::ImmedF(f),
-            LiteralExpression::Char(c) => Operand::ImmedI(c as i64),
-            LiteralExpression::String(s) => {
-                let idx = self.insert_static(s);
-                Operand::Static(idx)
-            }
+            LiteralExpression::Null => Operand::Immed(Value::Null),
+            LiteralExpression::Boolean(b) => Operand::Immed(Value::Bool(b)),
+            LiteralExpression::Integer(i) => Operand::Immed(Value::Integer(i)),
+            LiteralExpression::Float(f) => Operand::Immed(Value::Float(f)),
+            LiteralExpression::Char(c) => Operand::Immed(Value::Char(c)),
+            LiteralExpression::String(s) => Operand::Immed(Value::String(s)),
         }
     }
 

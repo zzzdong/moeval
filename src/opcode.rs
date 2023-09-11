@@ -2,8 +2,7 @@ use crate::ast::BinaryOperation;
 
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
-    LoadStatic,
-    LoadVar,
+    LoadEnv,
     LoadMember,
     Add,
     Sub,
@@ -12,9 +11,9 @@ pub enum OpCode {
     Mod,
     Pow,
     Negate,
+    Not,
     And,
     Or,
-    Not,
     Push,
     Pop,
     In,
