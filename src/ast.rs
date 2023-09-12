@@ -20,6 +20,27 @@ pub enum Expression {
     Block(BlockExpression),
 }
 
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Expression::Identifier(identifier) => write!(f, "{}", identifier),
+            Expression::Literal(literal) => write!(f, "{}", literal),
+            Expression::Grouped(grouped) => write!(f, "{}", grouped),
+            Expression::UnaryOperation(unary) => write!(f, "{}", unary),
+            Expression::BinaryOperation(binary) => write!(f, "{}", binary),
+            Expression::Array(array) => write!(f, "{}", array),
+            Expression::Dictionary(dictionary) => write!(f, "{}", dictionary),
+            Expression::Index(index) => write!(f, "{}", index),
+            Expression::Call(call) => write!(f, "{}", call),
+            Expression::Field(field) => write!(f, "{}", field),
+            Expression::In(in_) => write!(f, "{}", in_),
+            Expression::Matches(matches) => write!(f, "{}", matches),
+            Expression::Closure(closure) => write!(f, "{}", closure),
+            Expression::Block(block) => write!(f, "{}", block),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct IdentifierExpression {
     pub name: String,
@@ -30,6 +51,12 @@ impl From<Identifier> for IdentifierExpression {
         IdentifierExpression {
             name: identifier.name,
         }
+    }
+}
+
+impl fmt::Display for IdentifierExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -70,6 +97,12 @@ impl From<Literal> for LiteralExpression {
 #[derive(Debug)]
 pub struct GroupedExpression(pub Box<Expression>);
 
+impl fmt::Display for GroupedExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({})", self.0)
+    }
+}
+
 #[derive(Debug)]
 pub enum UnaryOperationExpression {
     Negation(Box<Expression>),
@@ -77,11 +110,27 @@ pub enum UnaryOperationExpression {
     Try(Box<Expression>),
 }
 
+impl fmt::Display for UnaryOperationExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UnaryOperationExpression::Negation(e) => write!(f, "-{}", e),
+            UnaryOperationExpression::Not(e) => write!(f, "!{}", e),
+            UnaryOperationExpression::Try(e) => write!(f, "{}?", e),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BinaryOperationExpression {
     pub op: BinaryOperation,
     pub left: Box<Expression>,
     pub right: Box<Expression>,
+}
+
+impl fmt::Display for BinaryOperationExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {} {}", self.left, self.op, self.right)
+    }
 }
 
 #[derive(Debug)]
@@ -107,14 +156,60 @@ pub enum BinaryOperation {
     Is,
 }
 
+impl fmt::Display for BinaryOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinaryOperation::Addition => write!(f, "+"),
+            BinaryOperation::Subtraction => write!(f, "-"),
+            BinaryOperation::Multiplication => write!(f, "*"),
+            BinaryOperation::Division => write!(f, "/"),
+            BinaryOperation::Modulus => write!(f, "%"),
+            BinaryOperation::Power => write!(f, "^"),
+            BinaryOperation::Equal => write!(f, "=="),
+            BinaryOperation::NotEqual => write!(f, "!="),
+            BinaryOperation::GreaterThan => write!(f, ">"),
+            BinaryOperation::GreaterThanOrEqual => write!(f, ">="),
+            BinaryOperation::LessThan => write!(f, "<"),
+            BinaryOperation::LessThanOrEqual => write!(f, "<="),
+            BinaryOperation::And => write!(f, "&&"),
+            BinaryOperation::Or => write!(f, "||"),
+            BinaryOperation::Member => write!(f, "."),
+            BinaryOperation::Matches => write!(f, "=~"),
+            BinaryOperation::In => write!(f, "in"),
+            BinaryOperation::As => write!(f, "as"),
+            BinaryOperation::Is => write!(f, "is"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ArrayExpression {
     pub elements: Vec<Expression>,
 }
 
+impl fmt::Display for ArrayExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[")?;
+        for item in &self.elements {
+            write!(f, "{},", item)?;
+        }
+        write!(f, "")
+    }
+}
+
 #[derive(Debug)]
 pub struct DictionaryExpression {
     pub elements: Vec<KeyValueExpress>,
+}
+
+impl fmt::Display for DictionaryExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{")?;
+        for item in &self.elements {
+            write!(f, "{},", item)?;
+        }
+        write!(f, "}}")
+    }
 }
 
 #[derive(Debug)]
@@ -123,10 +218,22 @@ pub struct KeyValueExpress {
     pub value: Box<Expression>,
 }
 
+impl fmt::Display for KeyValueExpress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.key, self.value)
+    }
+}
+
 #[derive(Debug)]
 pub struct IndexExpression {
     pub object: Box<Expression>,
     pub index: Box<Expression>,
+}
+
+impl fmt::Display for IndexExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}[{}]", self.object, self.index)
+    }
 }
 
 #[derive(Debug)]
@@ -135,10 +242,26 @@ pub struct CallExpression {
     pub arguments: Vec<Expression>,
 }
 
+impl fmt::Display for CallExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}(", self.callee)?;
+        for arg in &self.arguments {
+            write!(f, "{},", arg)?;
+        }
+        write!(f, ")")
+    }
+}
+
 #[derive(Debug)]
 pub struct FieldExpression {
     pub object: Box<Expression>,
     pub field: String,
+}
+
+impl fmt::Display for FieldExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}.{}", self.object, self.field)
+    }
 }
 
 #[derive(Debug)]
@@ -147,10 +270,22 @@ pub struct InExpression {
     pub object: Box<Expression>,
 }
 
+impl fmt::Display for InExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} in {}", self.element, self.object)
+    }
+}
+
 #[derive(Debug)]
 pub struct MatchesExpression {
     pub element: Box<Expression>,
     pub object: Box<Expression>,
+}
+
+impl fmt::Display for MatchesExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} matches {}", self.element, self.object)
+    }
 }
 
 #[derive(Debug)]
@@ -159,7 +294,27 @@ pub struct ClosureExpression {
     pub body: Box<Expression>,
 }
 
+impl fmt::Display for ClosureExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "|")?;
+        for cap in &self.captures {
+            write!(f, "{}, ", cap)?;
+        }
+        write!(f, "| {{ {} }}", self.body)
+    }
+}
+
 #[derive(Debug)]
 pub struct BlockExpression {
     pub exprs: Vec<Expression>,
+}
+
+impl fmt::Display for BlockExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{ ")?;
+        for expr in &self.exprs {
+            write!(f, "{};", expr)?;
+        }
+        write!(f, "}}")
+    }
 }

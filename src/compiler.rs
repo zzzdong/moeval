@@ -3,11 +3,13 @@ use std::{
     fmt,
 };
 
+use log::debug;
+
 use crate::{ast::*, value::Value};
 use crate::{opcode::OpCode, vm::Register};
 
 #[derive(Debug, Clone)]
-struct IROpCode {
+struct IRCode {
     index: usize,
     opcode: OpCode,
     operand0: Operand,
@@ -15,7 +17,7 @@ struct IROpCode {
     operand2: Operand,
 }
 
-impl fmt::Display for IROpCode {
+impl fmt::Display for IRCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -55,90 +57,34 @@ impl fmt::Display for IRVar {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct IROp(String);
-
-impl fmt::Display for IROp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for IROp {
-    fn from(value: &str) -> Self {
-        IROp(value.to_string())
-    }
-}
-
-struct IRStackFrame(HashMap<String, IRVar>);
-
-struct IRStack {
-    stack: VecDeque<IRStackFrame>,
-}
-
-impl IRStack {
-    fn new() -> Self {
-        IRStack {
-            stack: VecDeque::new(),
-        }
-    }
-
-    fn push(&mut self) {
-        self.stack.push_back(IRStackFrame(HashMap::new()));
-    }
-
-    fn pop(&mut self) {
-        self.stack.pop_back();
-    }
-
-    fn get(&self, name: &str) -> Option<IRVar> {
-        for frame in self.stack.iter().rev() {
-            if let Some(var) = frame.0.get(name) {
-                return Some(*var);
-            }
-        }
-
-        None
-    }
-
-    fn set(&mut self, name: &str, var: IRVar) {
-        self.stack
-            .back_mut()
-            .unwrap()
-            .0
-            .insert(name.to_string(), var);
-    }
-}
-
-pub struct IRCompiler {
-    stack: IRStack,
+pub struct IRBuilder {
     var: usize,
-    opcodes: Vec<IROpCode>,
+    codes: Vec<IRCode>,
+    symbol_table: HashMap<String, Symbol>,
 }
 
-impl IRCompiler {
+impl IRBuilder {
     fn new() -> Self {
-        let mut stack = IRStack::new();
-        stack.push();
-        IRCompiler {
-            stack,
+        IRBuilder {
             var: 0,
-            opcodes: Vec::new(),
+            codes: Vec::new(),
+            symbol_table: HashMap::new(),
         }
     }
 
     fn compile_expr(&mut self, expr: Expression) -> Operand {
+        println!("compiling expr: `{}`", expr);
         match expr {
             Expression::Literal(lit) => self.create_literal_operand(lit),
-            Expression::Identifier(IdentifierExpression { name }) => match self.stack.get(&name) {
-                Some(var) => Operand::Var(var.0),
+            Expression::Identifier(IdentifierExpression { name }) => match self.symbol_table.get(&name) {
+                Some(symbol) => Operand::Var(symbol.var),
                 None => {
                     let dest = self.create_var();
                     self.emit(
                         OpCode::LoadEnv,
                         &[dest.clone(), Operand::Immed(Value::String(name))],
                     );
-
+                    
                     dest
                 }
             },
@@ -226,9 +172,9 @@ impl IRCompiler {
     }
 
     fn emit(&mut self, opcode: OpCode, operands: &[Operand]) {
-        let idx = self.opcodes.len();
+        let idx = self.codes.len();
 
-        let opcode = IROpCode {
+        let opcode = IRCode {
             index: idx,
             opcode,
             operand0: operands.get(0).unwrap_or(&Operand::None).clone(),
@@ -236,45 +182,51 @@ impl IRCompiler {
             operand2: operands.get(2).unwrap_or(&Operand::None).clone(),
         };
 
-        self.opcodes.push(opcode);
+        self.codes.push(opcode);
     }
 
     fn print_code(&self) {
-        for code in &self.opcodes {
+        for code in &self.codes {
             println!("{};", code);
         }
     }
 
-    fn ir_code(&self) -> Vec<IROpCode> {
-        self.opcodes.clone()
+    fn ir_code(&self) -> Vec<IRCode> {
+        self.codes.clone()
     }
 }
 
-struct IRRewriter {
+struct VRegRewriter {
     regalloc: RegisterAllocation,
-    opcodes: Vec<IROpCode>,
+    opcodes: Vec<IRCode>,
     symbol_map: HashMap<usize, LiveInterval>,
+    stack_bottom: usize,
+    reg_cache: Vec<usize>,
 }
 
-impl IRRewriter {
-    fn new(num_registers: usize) -> IRRewriter {
-        IRRewriter {
+impl VRegRewriter {
+    fn new(num_registers: usize) -> VRegRewriter {
+        VRegRewriter {
             regalloc: RegisterAllocation::new(num_registers),
             opcodes: Vec::new(),
             symbol_map: HashMap::new(),
+            stack_bottom: 0,
+            reg_cache: Vec::new(),
         }
     }
 
-
-    fn rewrite(&mut self, input: Vec<IROpCode>) -> Vec<IROpCode> {
+    fn rewrite(&mut self, input: Vec<IRCode>) -> Vec<IRCode> {
         self.opcodes.reserve(input.len());
 
         let line_scan = self.regalloc.line_scan(&input);
+
+        println!("Line scan: {:?}", line_scan);
+
         for interval in line_scan {
             self.symbol_map.insert(interval.symbol.var, interval);
         }
 
-        for IROpCode {
+        for IRCode {
             index,
             opcode,
             operand0,
@@ -288,6 +240,12 @@ impl IRRewriter {
                 self.rewrite_operand(operand2),
             ];
             self.emit(opcode, operands);
+
+            // restore
+            self.reg_cache.reverse();
+            for reg in self.reg_cache.clone() {
+                self.emit(OpCode::Pop, &[Operand::Register(reg)]);
+            }
         }
 
         self.opcodes.clone()
@@ -297,9 +255,15 @@ impl IRRewriter {
         match operand {
             Operand::Var(var) => {
                 let symbol = self.symbol_map.get(&var).unwrap().symbol;
-                if symbol.location != usize::MAX {
-                    // self.emit(OpCode::Push, &[Operand::Register(symbol.register)]);
+                if symbol.location != usize::MAX && symbol.register != usize::MAX {
+                    self.emit(OpCode::Push, &[Operand::Register(symbol.register)]);
                     Operand::Stack(symbol.location)
+                } else if symbol.location != usize::MAX {
+                    // spill, borrow a reg
+                    let reg = self.reg_cache.len();
+                    self.emit(OpCode::Push, &[Operand::Register(reg)]);
+                    self.reg_cache.push(reg);
+                    Operand::Register(reg)
                 } else {
                     Operand::Register(symbol.register)
                 }
@@ -311,7 +275,7 @@ impl IRRewriter {
     fn emit(&mut self, opcode: OpCode, operands: &[Operand]) {
         let idx = self.opcodes.len();
 
-        let opcode = IROpCode {
+        let opcode = IRCode {
             index: idx,
             opcode,
             operand0: operands.get(0).unwrap_or(&Operand::None).clone(),
@@ -321,8 +285,6 @@ impl IRRewriter {
 
         self.opcodes.push(opcode);
     }
-
-    
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -355,7 +317,7 @@ struct RegisterPool {
 
 impl RegisterPool {
     fn new(num_registers: usize) -> Self {
-        let mut registers = Vec::with_capacity(num_registers);
+        let mut registers = Vec::new();
         registers.resize(num_registers, false);
 
         RegisterPool { registers }
@@ -369,15 +331,20 @@ impl RegisterPool {
         self.registers.iter().all(|r| *r == true)
     }
 
-    fn alloc_register(&self) -> usize {
+    fn alloc_register(&mut self) -> usize {
         match self.registers.iter().position(|r| *r == false) {
-            Some(idx) => idx,
+            Some(idx) => {
+                self.registers[idx] = true;
+                println!("alloc R{}", idx);
+                idx
+            }
             None => panic!("Register pool is empty"),
         }
     }
 
     fn free_register(&mut self, idx: usize) {
-        self.registers[idx] = true;
+        println!("free R{}", idx);
+        self.registers[idx] = false;
     }
 }
 
@@ -399,7 +366,7 @@ impl RegisterAllocation {
         }
     }
 
-    pub fn line_scan(&mut self, ir_code: &[IROpCode]) -> Vec<LiveInterval> {
+    pub fn line_scan(&mut self, ir_code: &[IRCode]) -> Vec<LiveInterval> {
         self.build_live_interval(ir_code);
 
         let mut live_intervals = self.get_live_intervals();
@@ -407,26 +374,25 @@ impl RegisterAllocation {
         println!("live_intervals --> {:?}", live_intervals);
 
         for (i, interval) in live_intervals.iter_mut().enumerate() {
-            println!("Interval {}: {:?}", i, interval);
+            // println!("Interval {}: {:?}", i, interval);
             self.expire_old_intervals(interval);
             if self.pool.is_empty() {
-                println!("");
                 self.spill_at_interval(interval);
             } else {
                 interval.symbol.register = self.pool.alloc_register();
-                println!(
-                    "ACTION: ALLOCATE REGISTER{} TO INTERVAL({:?})\n",
-                    interval.symbol.register, interval
-                );
-                self.active_intervals.push(interval.clone());
+                // println!(
+                //     "ACTION: ALLOCATE REGISTER{} TO INTERVAL({:?})\n",
+                //     interval.symbol.register, interval
+                // );
                 self.active_intervals.sort_by_key(|interval| interval.end);
+                self.active_intervals.push(interval.clone());
             }
         }
 
         live_intervals
     }
 
-    fn build_live_interval(&mut self, ir_code: &[IROpCode]) {
+    fn build_live_interval(&mut self, ir_code: &[IRCode]) {
         for (idx, ir) in ir_code.iter().enumerate() {
             if let Operand::Var(var) = ir.operand0 {
                 self.update_live_interval(var, idx);
@@ -462,50 +428,46 @@ impl RegisterAllocation {
     }
 
     fn expire_old_intervals(&mut self, interval: &LiveInterval) {
-        let mut active_intervals = self.active_intervals.clone();
-        active_intervals.sort_by_key(|interval| interval.end);
+        self.active_intervals.sort_by_key(|interval| interval.end);
 
         let mut to_remove = Vec::new();
 
-        for (idx, active) in active_intervals.iter_mut().enumerate() {
+        for (idx, active) in self.active_intervals.iter().enumerate() {
             if active.end >= interval.start {
-                // for i in to_remove {
-                //     active_intervals.remove(i);
-                // }
-                // self.active_intervals = active_intervals;
-                // return;
                 break;
             }
             to_remove.push(active.symbol);
             self.pool.free_register(active.symbol.register);
         }
 
-        for var in to_remove {
-            self.active_intervals.remove(
-                self.active_intervals
-                    .iter()
-                    .position(|interval| interval.symbol == var)
-                    .unwrap(),
-            );
-        }
+        self.active_intervals.retain(|interval| !to_remove.contains(&interval.symbol));
     }
 
     fn spill_at_interval(&mut self, interval: &mut LiveInterval) {
-        let location = self.new_stack_location();
+        if self.active_intervals.is_empty() {
+            return
+        }
+
+        let stack_location = self.new_stack_location();
         let spill = self.active_intervals.last_mut().unwrap();
 
         if spill.end > interval.end {
-            println!(
-                "ACTION: ALLOCATE REGISTER{} TO INTERVAL({:?})\n",
-                spill.symbol.register, interval
-            );
+            // println!(
+            //     "ACTION: ALLOCATE REGISTER{} TO INTERVAL({:?})\n",
+            //     spill.symbol.register, interval
+            // );
             interval.symbol.register = spill.symbol.register;
-            spill.symbol.location = location;
+            spill.symbol.location = stack_location;
+
+            println!("SPILL R{} -> sp+{}", spill.symbol.register, stack_location);
+
             self.active_intervals.pop();
+            self.active_intervals.sort_by_key(|interval| interval.end);
             self.active_intervals.push(interval.clone());
         } else {
-            println!("ACTION: SPILL INTERVAL {:?}", interval);
-            interval.symbol.location = location;
+            // println!("ACTION: SPILL INTERVAL {:?}", interval);
+            println!("ASSIGN symbol{:?} to sp+{}", interval.symbol, stack_location);
+            interval.symbol.location = stack_location;
         }
     }
 
@@ -525,7 +487,7 @@ mod test {
     #[test]
     fn test_ircompile() {
         let inputs = vec![
-            r#"a + b * c + 100 / 2"#,
+            r#"a + b * c + 100 - e + f ^ g / 2 || a == 3"#,
             r#"user.Role in admins || user.Id == comment.UserId"#,
             r#"user.Group in ["admin", "moderator"] || user.Id == comment.UserId"#,
         ];
@@ -535,13 +497,13 @@ mod test {
 
             println!("expr {:?}", expr);
 
-            let mut compiler = IRCompiler::new();
+            let mut compiler = IRBuilder::new();
             compiler.compile_expr(expr);
 
             compiler.print_code();
             println!("====",);
 
-            let mut rewriter = IRRewriter::new(4);
+            let mut rewriter = VRegRewriter::new(4);
 
             let ir = rewriter.rewrite(compiler.ir_code());
 
