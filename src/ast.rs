@@ -193,7 +193,7 @@ impl fmt::Display for ArrayExpression {
         for item in &self.elements {
             write!(f, "{},", item)?;
         }
-        write!(f, "")
+        write!(f, "]")
     }
 }
 

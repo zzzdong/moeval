@@ -4,6 +4,7 @@ use crate::ast::BinaryOperation;
 pub enum OpCode {
     LoadEnv,
     LoadMember,
+    Store,
     Add,
     Sub,
     Mul,
