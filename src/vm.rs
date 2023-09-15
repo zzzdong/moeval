@@ -1,5 +1,28 @@
 use std::fmt;
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PrimitiveType {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    Char(char),
+    String(String),
+}
+
+impl fmt::Display for PrimitiveType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrimitiveType::Null => write!(f, "null"),
+            PrimitiveType::Bool(b) => write!(f, "{}", b),
+            PrimitiveType::Integer(i) => write!(f, "{}", i),
+            PrimitiveType::Float(ff) => write!(f, "{}", ff),
+            PrimitiveType::Char(c) => write!(f, "'{}'", c),
+            PrimitiveType::String(s) => write!(f, "\"{}\"", s),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VirtReg(pub usize);
 

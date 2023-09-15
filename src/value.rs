@@ -22,30 +22,3 @@ pub enum Value {
     Array(Vec<Value>),
     Dictionary(HashMap<String, Value>),
 }
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Null => write!(f, "null"),
-            Value::Bool(b) => write!(f, "{}", b),
-            Value::Integer(i) => write!(f, "{}", i),
-            Value::Float(ff) => write!(f, "{}", ff),
-            Value::Char(c) => write!(f, "'{}'", c),
-            Value::String(s) => write!(f, "\"{}\"", s),
-            Value::Array(a) => {
-                write!(f, "[")?;
-                for item in a {
-                    write!(f, "{},", item)?;
-                }
-                write!(f, "]")
-            }
-            Value::Dictionary(d) => {
-                write!(f, "{{")?;
-                for (key, value) in d {
-                    write!(f, "{}: {},", key, value)?;
-                }
-                write!(f, "}}")
-            }
-        }
-    }
-}

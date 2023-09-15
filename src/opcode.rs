@@ -2,8 +2,7 @@ use std::fmt;
 
 use crate::{
     ast::BinaryOperation,
-    value::Value,
-    vm::{Register, StackOffset, VirtReg},
+    vm::{PrimitiveType, Register, StackOffset, VirtReg},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -70,7 +69,7 @@ impl TryFrom<BinaryOperation> for OpCode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    Immed(Value),
+    Immed(PrimitiveType),
     Register(Register),
     Stack(StackOffset),
     VirtReg(VirtReg),
@@ -80,7 +79,7 @@ pub enum Operand {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operand::Immed(Value) => write!(f, "{}", Value),
+            Operand::Immed(value) => write!(f, "{}", value),
             Operand::Register(reg) => write!(f, "{}", reg),
             Operand::VirtReg(vreg) => write!(f, "{}", vreg),
             Operand::Stack(s) => write!(f, "{}", s),

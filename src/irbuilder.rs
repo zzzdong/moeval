@@ -1,11 +1,10 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::{collections::BTreeMap, fmt};
+use std::fmt;
 
 use crate::ast::*;
 use crate::opcode::{OpCode, Operand};
-use crate::value::Value;
-use crate::vm::{Register, StackOffset, VirtReg};
+use crate::vm::{PrimitiveType, Register, StackOffset, VirtReg};
 
 #[derive(Debug, Clone)]
 struct VirtRegAllocator {
@@ -130,7 +129,10 @@ impl IRBuilder {
                         let dest = self.alloc_virt_reg();
                         self.emit(
                             OpCode::LoadEnv,
-                            &[dest.clone(), Operand::Immed(Value::String(name.clone()))],
+                            &[
+                                dest.clone(),
+                                Operand::Immed(PrimitiveType::String(name.clone())),
+                            ],
                         );
 
                         if let Operand::VirtReg(vreg) = dest {
@@ -150,7 +152,11 @@ impl IRBuilder {
                             let dest = self.alloc_virt_reg();
                             self.emit(
                                 OpCode::LoadMember,
-                                &[dest.clone(), lhs, Operand::Immed(Value::String(name))],
+                                &[
+                                    dest.clone(),
+                                    lhs,
+                                    Operand::Immed(PrimitiveType::String(name)),
+                                ],
                             );
                             dest
                         } else {
@@ -195,7 +201,7 @@ impl IRBuilder {
                 let dict = self.alloc_virt_reg();
                 self.emit(OpCode::NewDictionary, &[dict.clone()]);
                 for kv in elements {
-                    let key = Operand::Immed(Value::String(kv.key.name));
+                    let key = Operand::Immed(PrimitiveType::String(kv.key.name));
                     let value = self.compile_expr(*kv.value);
                     self.emit(OpCode::DictionaryPut, &[dict.clone(), key, value]);
                 }
@@ -215,12 +221,12 @@ impl IRBuilder {
 
     fn create_literal_operand(&mut self, lit: LiteralExpression) -> Operand {
         match lit {
-            LiteralExpression::Null => Operand::Immed(Value::Null),
-            LiteralExpression::Boolean(b) => Operand::Immed(Value::Bool(b)),
-            LiteralExpression::Integer(i) => Operand::Immed(Value::Integer(i)),
-            LiteralExpression::Float(f) => Operand::Immed(Value::Float(f)),
-            LiteralExpression::Char(c) => Operand::Immed(Value::Char(c)),
-            LiteralExpression::String(s) => Operand::Immed(Value::String(s)),
+            LiteralExpression::Null => Operand::Immed(PrimitiveType::Null),
+            LiteralExpression::Boolean(b) => Operand::Immed(PrimitiveType::Bool(b)),
+            LiteralExpression::Integer(i) => Operand::Immed(PrimitiveType::Integer(i)),
+            LiteralExpression::Float(f) => Operand::Immed(PrimitiveType::Float(f)),
+            LiteralExpression::Char(c) => Operand::Immed(PrimitiveType::Char(c)),
+            LiteralExpression::String(s) => Operand::Immed(PrimitiveType::String(s)),
         }
     }
 
