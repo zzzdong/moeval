@@ -11,7 +11,7 @@ pub enum ValueKind {
     Dictionary,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -33,16 +33,16 @@ impl fmt::Display for Value {
             Value::Char(c) => write!(f, "'{}'", c),
             Value::String(s) => write!(f, "\"{}\"", s),
             Value::Array(a) => {
-                write!(f, "[");
+                write!(f, "[")?;
                 for item in a {
-                    write!(f, "{},", item);
+                    write!(f, "{},", item)?;
                 }
                 write!(f, "]")
             }
             Value::Dictionary(d) => {
-                write!(f, "{{");
+                write!(f, "{{")?;
                 for (key, value) in d {
-                    write!(f, "{}: {},", key, value);
+                    write!(f, "{}: {},", key, value)?;
                 }
                 write!(f, "}}")
             }

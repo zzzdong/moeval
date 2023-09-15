@@ -7,7 +7,8 @@ pub enum Expression {
     Identifier(IdentifierExpression),
     Literal(LiteralExpression),
     Grouped(GroupedExpression),
-    UnaryOperation(UnaryOperationExpression),
+    PrefixOperation(PrefixOperationExpression),
+    PostfixOperation(PostfixOperationExpression),
     BinaryOperation(BinaryOperationExpression),
     Array(ArrayExpression),
     Dictionary(DictionaryExpression),
@@ -26,7 +27,8 @@ impl fmt::Display for Expression {
             Expression::Identifier(identifier) => write!(f, "{}", identifier),
             Expression::Literal(literal) => write!(f, "{}", literal),
             Expression::Grouped(grouped) => write!(f, "{}", grouped),
-            Expression::UnaryOperation(unary) => write!(f, "{}", unary),
+            Expression::PrefixOperation(prefix) => write!(f, "{}", prefix),
+            Expression::PostfixOperation(postfix) => write!(f, "{}", postfix),
             Expression::BinaryOperation(binary) => write!(f, "{}", binary),
             Expression::Array(array) => write!(f, "{}", array),
             Expression::Dictionary(dictionary) => write!(f, "{}", dictionary),
@@ -104,18 +106,29 @@ impl fmt::Display for GroupedExpression {
 }
 
 #[derive(Debug)]
-pub enum UnaryOperationExpression {
+pub enum PrefixOperationExpression {
     Negation(Box<Expression>),
     Not(Box<Expression>),
+}
+
+impl fmt::Display for PrefixOperationExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PrefixOperationExpression::Negation(e) => write!(f, "-{}", e),
+            PrefixOperationExpression::Not(e) => write!(f, "!{}", e),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum PostfixOperationExpression {
     Try(Box<Expression>),
 }
 
-impl fmt::Display for UnaryOperationExpression {
+impl fmt::Display for PostfixOperationExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            UnaryOperationExpression::Negation(e) => write!(f, "-{}", e),
-            UnaryOperationExpression::Not(e) => write!(f, "!{}", e),
-            UnaryOperationExpression::Try(e) => write!(f, "{}?", e),
+            PostfixOperationExpression::Try(e) => write!(f, "{}?", e),
         }
     }
 }
@@ -154,6 +167,7 @@ pub enum BinaryOperation {
     Matches,
     As,
     Is,
+    Assign,
 }
 
 impl fmt::Display for BinaryOperation {
@@ -178,6 +192,7 @@ impl fmt::Display for BinaryOperation {
             BinaryOperation::In => write!(f, "in"),
             BinaryOperation::As => write!(f, "as"),
             BinaryOperation::Is => write!(f, "is"),
+            BinaryOperation::Assign => write!(f, "="),
         }
     }
 }
@@ -284,7 +299,7 @@ pub struct MatchesExpression {
 
 impl fmt::Display for MatchesExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} matches {}", self.element, self.object)
+        write!(f, "{} =~ {}", self.element, self.object)
     }
 }
 

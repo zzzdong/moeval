@@ -1,5 +1,6 @@
 mod ast;
 mod compiler;
+mod irbuilder;
 mod opcode;
 mod parser;
 mod tokenizer;

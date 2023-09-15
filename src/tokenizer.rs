@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{borrow::Cow, ops::Deref, str::Chars};
 
-use crate::ast::{BinaryOperation, IdentifierExpression, LiteralExpression};
+use crate::ast::{BinaryOperation, LiteralExpression};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -133,9 +133,10 @@ define_symbols! {
     EqEq       => "==",
     NotEq      => "!=",
     Lt         => "<",
-    LtEq        => "<=",
+    LtEq       => "<=",
     Gt         => ">",
-    GtEq        => ">=",
+    GtEq       => ">=",
+    EqTidle    => "=~",
     At         => "@",
     Dollar     => "$",
     Dot        => ".",
@@ -180,6 +181,8 @@ impl TryInto<BinaryOperation> for Symbol {
             Symbol::LtEq => Ok(BinaryOperation::LessThanOrEqual),
             Symbol::GtEq => Ok(BinaryOperation::GreaterThanOrEqual),
             Symbol::Dot => Ok(BinaryOperation::Member),
+            Symbol::Eq => Ok(BinaryOperation::Assign),
+            Symbol::EqTidle => Ok(BinaryOperation::Matches),
 
             _ => Err(TokenError::new(format!("{:?} not a binary operator", self))),
         }
@@ -237,7 +240,6 @@ define_keywords! {
     True => "true",
     False => "false",
     In => "in",
-    Matches => "matches",
     As => "as",
     Is => "is",
 }
@@ -249,7 +251,6 @@ impl TryInto<BinaryOperation> for Keyword {
         match self {
             Keyword::As => Ok(BinaryOperation::As),
             Keyword::In => Ok(BinaryOperation::In),
-            Keyword::Matches => Ok(BinaryOperation::Matches),
             Keyword::Is => Ok(BinaryOperation::Is),
             _ => Err(TokenError::new(format!("{:?} not a binary operator", self))),
         }

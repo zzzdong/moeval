@@ -1,16 +1,15 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt,
-};
+use std::fmt;
 
-use crate::{
-    ast::{
-        BinaryOperation, BinaryOperationExpression, Expression, IdentifierExpression,
-        LiteralExpression,
-    },
-    value::Value,
-};
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VirtReg(pub usize);
 
+impl fmt::Display for VirtReg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "v{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Register {
     R0,
     R1,
@@ -21,48 +20,38 @@ pub enum Register {
     R6,
     R7,
     Ret,
+    Rsp,
+    Rbp,
 }
 
-// #[derive(Debug, Clone)]
-// pub struct IRConst(Value);
-
-// impl fmt::Display for IRConst {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}", self.0)
-//     }
-// }
-
-pub struct Compiler {}
-
-impl Compiler {
-    // pub fn compile(expr: Expression) -> Vec<OpCode> {
-
-    // }
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Register::R0 => write!(f, "R0"),
+            Register::R1 => write!(f, "R1"),
+            Register::R2 => write!(f, "R2"),
+            Register::R3 => write!(f, "R3"),
+            Register::R4 => write!(f, "R4"),
+            Register::R5 => write!(f, "R5"),
+            Register::R6 => write!(f, "R6"),
+            Register::R7 => write!(f, "R7"),
+            Register::Ret => write!(f, "Ret"),
+            Register::Rsp => write!(f, "Rsp"),
+            Register::Rbp => write!(f, "Rbp"),
+        }
+    }
 }
 
-// pub fn compile(expr: Expression) -> Vec<OpCode> {
-//     let mut opcods = vec![];
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StackOffset(usize);
+impl StackOffset {
+    pub fn new(offset: usize) -> StackOffset {
+        StackOffset(offset)
+    }
+}
 
-//     match expr {
-//         Expression::Identifier(IdentifierExpression { name }) => opcods.push(OpCode::Push),
-//         Expression::BinaryOperation(BinaryOperationExpression { op, left, right }) => {
-//             let left_opcods = compile(*left);
-//             let right_opcods = compile(*right);
-
-//             opcods.extend(left_opcods);
-//             opcods.extend(right_opcods);
-
-//             match op {
-//                 // TODO: implement more operators
-//                 "+" => {
-//                     opcods.push(OpCode::Add);
-//                 }
-//             }
-//         }
-//         _ => {
-//             unreachable!();
-//         }
-//     };
-
-//     opcods
-// }
+impl fmt::Display for StackOffset {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "rbp+{}", self.0)
+    }
+}

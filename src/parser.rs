@@ -1,16 +1,9 @@
-use std::{borrow::Cow, iter::Peekable};
+use std::borrow::Cow;
 
 use log::{debug, error};
 
-use crate::{
-    ast::{
-        ArrayExpression, BinaryOperationExpression, BlockExpression, CallExpression,
-        ClosureExpression, DictionaryExpression, Expression, GroupedExpression,
-        IdentifierExpression, InExpression, IndexExpression, KeyValueExpress, LiteralExpression,
-        MatchesExpression, UnaryOperationExpression,
-    },
-    tokenizer::{Keyword, Pair, Pairs, Symbol, Token, TokenError},
-};
+use crate::ast::*;
+use crate::tokenizer::*;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -96,10 +89,13 @@ impl Parser {
 
     fn parse_prefix(&mut self) -> Result<Expression, ParseError> {
         match self.peek_token()?.as_deref() {
-            Some(Token::Symbol(Symbol::Minus)) | Some(Token::Symbol(Symbol::Not)) => Ok(Expression::UnaryOperation(
-                UnaryOperationExpression::Negation(Box::new(
+            Some(Token::Symbol(Symbol::Minus)) => Ok(Expression::PrefixOperation(
+                PrefixOperationExpression::Negation(Box::new(
                     self.parse_subexpr(Precedence::Prefix)?,
                 )),
+            )),
+            Some(Token::Symbol(Symbol::Not)) => Ok(Expression::PrefixOperation(
+                PrefixOperationExpression::Not(Box::new(self.parse_subexpr(Precedence::Prefix)?)),
             )),
             _ => self.parse_primary(),
         }
@@ -136,9 +132,9 @@ impl Parser {
                         index: Box::new(index),
                     }))
                 }
-                Symbol::Question => Ok(Expression::UnaryOperation(UnaryOperationExpression::Try(
-                    Box::new(expr),
-                ))),
+                Symbol::Question => Ok(Expression::PostfixOperation(
+                    PostfixOperationExpression::Try(Box::new(expr)),
+                )),
                 _ => {
                     if let Ok(op) = sym.try_into() {
                         Ok(Expression::BinaryOperation(BinaryOperationExpression {
@@ -277,13 +273,15 @@ impl Parser {
                 Symbol::PathSep => Precedence::Path,
                 Symbol::OrOr => Precedence::LogicOr,
                 Symbol::AndAnd => Precedence::LogicAnd,
+                Symbol::And => Precedence::Assign,
+                Symbol::EqTidle => Precedence::Judge,
                 _ => {
                     debug!("Precedence::Lowest for sym {:?}", sym);
                     Precedence::Lowest
                 }
             },
             Some(Token::Keyword(kw)) => match kw {
-                Keyword::In | Keyword::Matches => Precedence::Judge,
+                Keyword::In => Precedence::Judge,
                 _ => Precedence::Lowest,
             },
             _ => Precedence::Lowest,
