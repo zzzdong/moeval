@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use crate::ast::*;
-use crate::opcode::{OpCode, Operand};
+use crate::opcode::{OpCode, Operand, Instruction, Instructions};
 use crate::vm::{PrimitiveType, Register, StackOffset, VirtReg};
 
 #[derive(Debug, Clone)]
@@ -23,85 +23,7 @@ impl VirtRegAllocator {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Instruction {
-    index: usize,
-    opcode: OpCode,
-    operand0: Operand,
-    operand1: Operand,
-    operand2: Operand,
-}
 
-impl Instruction {
-    fn new(opcode: OpCode, operand0: Operand, operand1: Operand, operand2: Operand) -> Self {
-        Instruction {
-            index: 0,
-            opcode,
-            operand0,
-            operand1,
-            operand2,
-        }
-    }
-
-    fn single(opcode: OpCode, operand0: Operand) -> Self {
-        Instruction {
-            index: 0,
-            opcode,
-            operand0,
-            operand1: Operand::None,
-            operand2: Operand::None,
-        }
-    }
-
-    fn two(opcode: OpCode, operand0: Operand, operand1: Operand) -> Self {
-        Instruction {
-            index: 0,
-            opcode,
-            operand0,
-            operand1,
-            operand2: Operand::None,
-        }
-    }
-}
-
-impl fmt::Display for Instruction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?} {}", self.opcode, self.operand0)?;
-        if self.operand1 != Operand::None {
-            write!(f, " {}", self.operand1)?;
-        }
-        if self.operand2 != Operand::None {
-            write!(f, " {}", self.operand2)?;
-        }
-
-        Ok(())
-    }
-}
-
-pub struct Instructions(Vec<Instruction>);
-
-impl Instructions {
-    pub fn new() -> Self {
-        Instructions(Vec::new())
-    }
-
-    fn push(&mut self, inst: Instruction) {
-        self.0.push(inst)
-    }
-
-    fn extend(&mut self, insts: impl IntoIterator<Item = Instruction>) {
-        self.0.extend(insts)
-    }
-}
-
-impl fmt::Display for Instructions {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for i in &self.0 {
-            writeln!(f, "{};", i)?;
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct IRBuilder {
@@ -111,7 +33,7 @@ pub struct IRBuilder {
 }
 
 impl IRBuilder {
-    fn new() -> Self {
+    pub fn new() -> Self {
         IRBuilder {
             vr_allocator: VirtRegAllocator::new(),
             instructions: Vec::new(),
@@ -119,7 +41,7 @@ impl IRBuilder {
         }
     }
 
-    fn compile_expr(&mut self, expr: Expression) -> Operand {
+    pub fn build_expr(&mut self, expr: Expression) -> Operand {
         match expr {
             Expression::Literal(lit) => self.create_literal_operand(lit),
             Expression::Identifier(IdentifierExpression { name }) => {
@@ -131,7 +53,7 @@ impl IRBuilder {
                             OpCode::LoadEnv,
                             &[
                                 dest.clone(),
-                                Operand::Immed(PrimitiveType::String(name.clone())),
+                                Operand::Immed(PrimitiveType::String(name.clone().into())),
                             ],
                         );
 
@@ -146,7 +68,7 @@ impl IRBuilder {
             Expression::BinaryOperation(BinaryOperationExpression { left, op, right }) => {
                 match op {
                     BinaryOperation::Member => {
-                        let lhs = self.compile_expr(*left);
+                        let lhs = self.build_expr(*left);
                         if let Expression::Identifier(IdentifierExpression { name }) = *right {
                             // load member
                             let dest = self.alloc_virt_reg();
@@ -155,7 +77,7 @@ impl IRBuilder {
                                 &[
                                     dest.clone(),
                                     lhs,
-                                    Operand::Immed(PrimitiveType::String(name)),
+                                    Operand::Immed(PrimitiveType::String(name.into())),
                                 ],
                             );
                             dest
@@ -164,8 +86,8 @@ impl IRBuilder {
                         }
                     }
                     _ => {
-                        let lhs = self.compile_expr(*left);
-                        let rhs = self.compile_expr(*right);
+                        let lhs = self.build_expr(*left);
+                        let rhs = self.build_expr(*right);
                         let op = OpCode::try_from(op).unwrap();
                         let dest = self.alloc_virt_reg();
 
@@ -176,23 +98,23 @@ impl IRBuilder {
                 }
             }
             Expression::PrefixOperation(PrefixOperationExpression::Negation(expr)) => {
-                let operand = self.compile_expr(*expr);
+                let operand = self.build_expr(*expr);
                 let dest = self.alloc_virt_reg();
                 self.emit(OpCode::Negate, &[dest.clone(), operand]);
                 dest
             }
             Expression::PrefixOperation(PrefixOperationExpression::Not(expr)) => {
-                let operand = self.compile_expr(*expr);
+                let operand = self.build_expr(*expr);
                 let dest = self.alloc_virt_reg();
                 self.emit(OpCode::Not, &[dest.clone(), operand]);
                 dest
             }
-            Expression::Grouped(GroupedExpression(expr)) => self.compile_expr(*expr),
+            Expression::Grouped(GroupedExpression(expr)) => self.build_expr(*expr),
             Expression::Array(ArrayExpression { elements }) => {
                 let array = self.alloc_virt_reg();
                 self.emit(OpCode::NewArray, &[array.clone()]);
                 for element in elements {
-                    let item = self.compile_expr(element);
+                    let item = self.build_expr(element);
                     self.emit(OpCode::ArrayPush, &[array.clone(), item]);
                 }
                 array
@@ -201,8 +123,8 @@ impl IRBuilder {
                 let dict = self.alloc_virt_reg();
                 self.emit(OpCode::NewDictionary, &[dict.clone()]);
                 for kv in elements {
-                    let key = Operand::Immed(PrimitiveType::String(kv.key.name));
-                    let value = self.compile_expr(*kv.value);
+                    let key = Operand::Immed(PrimitiveType::String(kv.key.name.into()));
+                    let value = self.build_expr(*kv.value);
                     self.emit(OpCode::DictionaryPut, &[dict.clone(), key, value]);
                 }
                 dict
@@ -226,45 +148,44 @@ impl IRBuilder {
             LiteralExpression::Integer(i) => Operand::Immed(PrimitiveType::Integer(i)),
             LiteralExpression::Float(f) => Operand::Immed(PrimitiveType::Float(f)),
             LiteralExpression::Char(c) => Operand::Immed(PrimitiveType::Char(c)),
-            LiteralExpression::String(s) => Operand::Immed(PrimitiveType::String(s)),
+            LiteralExpression::String(s) => Operand::Immed(PrimitiveType::String(s.into())),
         }
     }
 
     fn emit(&mut self, opcode: OpCode, operands: &[Operand]) {
         let idx = self.instructions.len();
 
-        let opcode = Instruction {
-            index: idx,
+        let opcode = Instruction::new(
             opcode,
-            operand0: operands.get(0).unwrap_or(&Operand::None).clone(),
-            operand1: operands.get(1).unwrap_or(&Operand::None).clone(),
-            operand2: operands.get(2).unwrap_or(&Operand::None).clone(),
-        };
+            operands.get(0).unwrap_or(&Operand::None).clone(),
+            operands.get(1).unwrap_or(&Operand::None).clone(),
+            operands.get(2).unwrap_or(&Operand::None).clone(),
+        );
 
         self.instructions.push(opcode);
     }
 
-    fn instructions(&self) -> Instructions {
-        Instructions(self.instructions.clone())
+    pub fn instructions(&self) -> Instructions {
+        Instructions::with_instructions(self.instructions.clone())
     }
 }
 
-struct VirtRegRewriter {
+pub struct VirtRegRewriter {
     regalloc: RegisterAllocator,
 }
 
 impl VirtRegRewriter {
-    fn new(registers: &[Register]) -> VirtRegRewriter {
+    pub fn new(registers: &[Register]) -> VirtRegRewriter {
         VirtRegRewriter {
             regalloc: RegisterAllocator::new(registers),
         }
     }
 
-    fn rewrite(&mut self, input: Instructions) -> Instructions {
+    pub fn rewrite(&mut self, input: Instructions) -> Instructions {
         let mut output = Instructions::new();
 
         let virt_reg_map = self.regalloc.line_scan(&input);
-        for inst in input.0 {
+        for inst in input.into_iter() {
             output.extend(virt_reg_map.rewrite(inst));
         }
 
@@ -353,7 +274,6 @@ impl VirtRegMap {
         let mut insts = Vec::new();
 
         let Instruction {
-            index,
             opcode,
             operand0,
             operand1,
@@ -477,7 +397,7 @@ impl RegisterAllocator {
     }
 
     fn build_live_interval(&mut self, instructions: &Instructions) {
-        for (idx, ir) in instructions.0.iter().enumerate() {
+        for (idx, ir) in instructions.iter().enumerate() {
             if let Operand::VirtReg(var) = ir.operand0 {
                 self.update_live_interval(var, idx);
             }
@@ -580,7 +500,7 @@ mod test {
             println!("expr {:?}", expr);
 
             let mut compiler = IRBuilder::new();
-            compiler.compile_expr(expr);
+            compiler.build_expr(expr);
 
             println!("{}", compiler.instructions());
             println!("====",);

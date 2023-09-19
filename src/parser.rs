@@ -50,12 +50,12 @@ impl From<TokenError> for ParseError {
     }
 }
 
-pub struct Parser {
-    pairs: Pairs<'static>,
+pub struct Parser<'i> {
+    pairs: Pairs<'i>,
 }
 
-impl Parser {
-    pub fn parse(input: &'static str) -> Result<Expression, ParseError> {
+impl<'i> Parser<'i> {
+    pub fn parse(input: &'i str) -> Result<Expression, ParseError> {
         let pairs = Pairs::new(input);
         let mut parser = Parser { pairs };
         parser.parse_expr()
@@ -312,7 +312,7 @@ impl Parser {
         terminated: Symbol,
     ) -> Result<Vec<T>, ParseError>
     where
-        F: Fn(&mut Parser) -> Result<T, ParseError>,
+        F: Fn(&mut Parser<'i>) -> Result<T, ParseError>,
     {
         let mut values = Vec::new();
         loop {
