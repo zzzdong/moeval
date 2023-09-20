@@ -1,6 +1,29 @@
-use std::{collections::HashMap, sync::Arc, fmt, any::Any};
+use std::{any::Any, collections::HashMap, fmt, sync::Arc};
 
-use crate::vm::PrimitiveType;
+use crate::Error;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Primitive {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    Char(char),
+    String(Arc<String>),
+}
+
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Primitive::Null => write!(f, "null"),
+            Primitive::Bool(b) => write!(f, "{}", b),
+            Primitive::Integer(i) => write!(f, "{}", i),
+            Primitive::Float(ff) => write!(f, "{}", ff),
+            Primitive::Char(c) => write!(f, "'{}'", c),
+            Primitive::String(s) => write!(f, "\"{}\"", s),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ValueKind {
@@ -26,17 +49,88 @@ pub enum Value {
     Dynamic(Arc<dyn Object>),
 }
 
-
-impl From<PrimitiveType> for Value {
-    fn from(value: PrimitiveType) -> Self {
+impl From<Primitive> for Value {
+    fn from(value: Primitive) -> Self {
         match value {
-            PrimitiveType::Null => Self::Null,
-            PrimitiveType::Bool(value) => Self::Bool(value),
-            PrimitiveType::Integer(value) => Self::Integer(value),
-            PrimitiveType::Float(value) => Self::Float(value),
-            PrimitiveType::Char(value) => Self::Char(value),
-            PrimitiveType::String(value) => Self::String(value),
+            Primitive::Null => Self::Null,
+            Primitive::Bool(value) => Self::Bool(value),
+            Primitive::Integer(value) => Self::Integer(value),
+            Primitive::Float(value) => Self::Float(value),
+            Primitive::Char(value) => Self::Char(value),
+            Primitive::String(value) => Self::String(value),
         }
+    }
+}
+
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(value: Option<T>) -> Self {
+        match value {
+            Some(value) => value.into(),
+            None => Self::Null,
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Self::Bool(value)
+    }
+}
+
+macro_rules! impl_from_int {
+    ($t:ty) => {
+        impl From<$t> for Value {
+            fn from(value: $t) -> Self {
+                Self::Integer(value as i64)
+            }
+        }
+    };
+}
+
+impl_from_int!(i8);
+impl_from_int!(u8);
+impl_from_int!(i16);
+impl_from_int!(u16);
+impl_from_int!(i32);
+impl_from_int!(u32);
+impl_from_int!(i64);
+impl_from_int!(u64);
+impl_from_int!(isize);
+impl_from_int!(usize);
+
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Self::Float(value as f64)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Self::Float(value)
+    }
+}
+
+impl From<char> for Value {
+    fn from(value: char) -> Self {
+        Self::Char(value)
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Self::String(Arc::new(value))
+    }
+}
+
+impl From<Arc<String>> for Value {
+    fn from(value: Arc<String>) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_string().into())
     }
 }
 
@@ -74,20 +168,17 @@ impl std::ops::Add for Value {
     }
 }
 
-
-
-
 pub trait Object: fmt::Display + fmt::Debug + Any + Sync + Send {
-    fn get_field(&self, name: &str) -> Option<Value> {
-        None
+    fn get_field(&self, _name: &str) -> Result<Option<Value>, Error> {
+        Err(Error::OpUnimplemented)
     }
-    fn set_field(&mut self, name: &str, value: Value) {
-
+    fn set_field(&self, _name: &str, _value: Value) -> Result<(), Error> {
+        Err(Error::OpUnimplemented)
     }
-    fn call(&mut self, args: &[Value]) -> Option<Value> {
-        None
+    fn call(&self, _args: &[Value]) -> Result<Option<Value>, Error> {
+        Err(Error::OpUnimplemented)
     }
-    fn call_method(&mut self, name: &str, args: &[Value]) -> Option<Value> {
-        None
+    fn call_method(&self, _name: &str, _args: &[Value]) -> Result<Option<Value>, Error> {
+        Err(Error::OpUnimplemented)
     }
 }

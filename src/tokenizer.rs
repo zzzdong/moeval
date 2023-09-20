@@ -31,7 +31,7 @@ impl Token {
     pub(crate) fn symbol(s: &str) -> Token {
         Token::Symbol(Symbol::from_str(s).unwrap())
     }
-    pub(crate) fn whitespace(s: &str) -> Token {
+    pub(crate) fn whitespace(_s: &str) -> Token {
         Token::Whitespace
     }
 }
@@ -296,7 +296,7 @@ impl<'i> Tokenizer<'i> {
                 c if c.is_whitespace() => return self.eat_whitespace(),
                 c if c.is_ascii_digit() => return self.eat_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => return self.eat_identifier(),
-                c => {
+                _c => {
                     if Symbol::STRS.contains(&self.peek_nchar(3)) {
                         let symbol = Symbol::from_str(self.take_nchar(3)).expect("Invalid symbol");
                         return Ok(Pair::new(Token::Symbol(symbol), self.new_span(self.pos)));
@@ -320,7 +320,7 @@ impl<'i> Tokenizer<'i> {
 
     fn eat_whitespace(&mut self) -> Result<Pair<'i>, TokenError> {
         let start = self.pos;
-        let ws = self.eat_while(|c| c.is_whitespace());
+        let _ws = self.eat_while(|c| c.is_whitespace());
         Ok(Pair::new(
             Token::Whitespace,
             Span::new(self.input, start, self.pos),

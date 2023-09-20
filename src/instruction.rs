@@ -1,14 +1,12 @@
-use std::{fmt, ops::Index, slice::SliceIndex};
+use std::{fmt, ops::Index};
 
-use crate::{
-    ast::BinaryOperation,
-    vm::{PrimitiveType, Register, StackOffset, VirtReg}, value::Value,
-};
+use crate::{ast::BinaryOperation, value::Primitive};
 
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
     LoadEnv,
     LoadMember,
+    StackAlloc,
     Move,
     Load,
     Store,
@@ -71,7 +69,7 @@ impl TryFrom<BinaryOperation> for OpCode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    Immed(PrimitiveType),
+    Immed(Primitive),
     Register(Register),
     Stack(StackOffset),
     VirtReg(VirtReg),
@@ -141,15 +139,16 @@ impl fmt::Display for Instruction {
     }
 }
 
-pub struct Instructions(Vec<Instruction>);
+#[derive(Debug, Clone)]
+pub struct Module(Vec<Instruction>);
 
-impl Instructions {
+impl Module {
     pub fn new() -> Self {
-        Instructions(Vec::new())
+        Module(Vec::new())
     }
 
     pub fn with_instructions(insts: Vec<Instruction>) -> Self {
-        Instructions(insts)
+        Module(insts)
     }
 
     pub fn get(&self, index: usize) -> Option<&Instruction> {
@@ -177,7 +176,7 @@ impl Instructions {
     }
 }
 
-impl Index<usize> for Instructions {
+impl Index<usize> for Module {
     type Output = Instruction;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -185,7 +184,7 @@ impl Index<usize> for Instructions {
     }
 }
 
-impl IntoIterator for Instructions {
+impl IntoIterator for Module {
     type Item = Instruction;
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
@@ -194,7 +193,7 @@ impl IntoIterator for Instructions {
     }
 }
 
-impl fmt::Display for Instructions {
+impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for i in &self.0 {
             writeln!(f, "{};", i)?;
@@ -203,6 +202,93 @@ impl fmt::Display for Instructions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VirtReg(pub usize);
 
+impl fmt::Display for VirtReg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "v{}", self.0)
+    }
+}
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Register {
+    R0 = 0,
+    R1 = 1,
+    R2 = 2,
+    R3 = 3,
+    R4 = 4,
+    R5 = 5,
+    R6 = 6,
+    R7 = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    R11 = 11,
+    R12 = 12,
+    Rbp = 13,
+    Rsp = 14,
+    Rpc = 15,
+}
 
+impl Register {
+    pub fn registers() -> [Register; 8] {
+        [
+            Register::R0,
+            Register::R1,
+            Register::R2,
+            Register::R3,
+            Register::R4,
+            Register::R5,
+            Register::R6,
+            Register::R7,
+        ]
+    }
+
+    pub fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Register::R0 => write!(f, "R0"),
+            Register::R1 => write!(f, "R1"),
+            Register::R2 => write!(f, "R2"),
+            Register::R3 => write!(f, "R3"),
+            Register::R4 => write!(f, "R4"),
+            Register::R5 => write!(f, "R5"),
+            Register::R6 => write!(f, "R6"),
+            Register::R7 => write!(f, "R7"),
+            Register::R8 => write!(f, "R8"),
+            Register::R9 => write!(f, "R9"),
+            Register::R10 => write!(f, "R10"),
+            Register::R11 => write!(f, "R11"),
+            Register::R12 => write!(f, "R12"),
+            Register::Rbp => write!(f, "Rbp"),
+            Register::Rsp => write!(f, "Rsp"),
+            Register::Rpc => write!(f, "Rpc"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StackOffset(usize);
+
+impl StackOffset {
+    pub fn new(offset: usize) -> StackOffset {
+        StackOffset(offset)
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.0
+    }
+}
+
+impl fmt::Display for StackOffset {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "rbp+{}", self.0)
+    }
+}

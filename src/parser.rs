@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use log::{debug, error};
+use log::debug;
 
 use crate::ast::*;
 use crate::tokenizer::*;

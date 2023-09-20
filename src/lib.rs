@@ -1,16 +1,15 @@
 mod ast;
 mod compiler;
+mod error;
+mod instruction;
 mod interpreter;
-mod irbuilder;
-mod opcode;
 mod parser;
 mod tokenizer;
 mod value;
 mod vm;
-mod error;
 
-pub use value::Value;
 pub use error::Error;
+pub use value::Value;
 pub use vm::Environment;
 pub use vm::Vm;
 

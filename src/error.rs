@@ -9,6 +9,8 @@ pub enum Error {
     OpIllegalOperate,
     InvalidArgument,
     UndefinedVariable(Arc<String>),
+    IndexOutOfBounds(usize, usize),
+    EntryNotFound(Arc<String>),
 }
 
 impl std::fmt::Display for Error {
@@ -19,12 +21,13 @@ impl std::fmt::Display for Error {
             Error::OpIllegalOperate => write!(f, "Illegal operator"),
             Error::InvalidArgument => write!(f, "Invalid argument"),
             Error::UndefinedVariable(v) => write!(f, "Undefined variable: {}", v),
+            Error::IndexOutOfBounds(i, l) => write!(f, "Index out of bounds: {} of {}", i, l),
+            Error::EntryNotFound(v) => write!(f, "Entry not found: {}", v),
         }
     }
 }
 
 impl std::error::Error for Error {}
-
 
 impl From<ParseError> for Error {
     fn from(e: ParseError) -> Self {

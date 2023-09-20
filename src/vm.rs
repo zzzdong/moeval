@@ -2,123 +2,9 @@ use std::{collections::HashMap, fmt, sync::Arc};
 
 use crate::{
     error::Error,
-    opcode::{Instruction, Instructions, OpCode, Operand},
-    value::Value,
+    instruction::{Instruction, Module, OpCode, Operand, Register},
+    value::{Primitive, Value},
 };
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PrimitiveType {
-    Null,
-    Bool(bool),
-    Integer(i64),
-    Float(f64),
-    Char(char),
-    String(Arc<String>),
-}
-
-impl fmt::Display for PrimitiveType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PrimitiveType::Null => write!(f, "null"),
-            PrimitiveType::Bool(b) => write!(f, "{}", b),
-            PrimitiveType::Integer(i) => write!(f, "{}", i),
-            PrimitiveType::Float(ff) => write!(f, "{}", ff),
-            PrimitiveType::Char(c) => write!(f, "'{}'", c),
-            PrimitiveType::String(s) => write!(f, "\"{}\"", s),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VirtReg(pub usize);
-
-impl fmt::Display for VirtReg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "v{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum Register {
-    R0 = 0,
-    R1 = 1,
-    R2 = 2,
-    R3 = 3,
-    R4 = 4,
-    R5 = 5,
-    R6 = 6,
-    R7 = 7,
-    R8 = 8,
-    R9 = 9,
-    R10 = 10,
-    R11 = 11,
-    R12 = 12,
-    Rbp = 13,
-    Rsp = 14,
-    Rpc = 15,
-}
-
-impl Register {
-    pub fn registers() -> [Register; 8] {
-        [
-            Register::R0,
-            Register::R1,
-            Register::R2,
-            Register::R3,
-            Register::R4,
-            Register::R5,
-            Register::R6,
-            Register::R7,
-        ]
-    }
-
-    pub fn as_usize(&self) -> usize {
-        *self as usize
-    }
-}
-
-impl fmt::Display for Register {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Register::R0 => write!(f, "R0"),
-            Register::R1 => write!(f, "R1"),
-            Register::R2 => write!(f, "R2"),
-            Register::R3 => write!(f, "R3"),
-            Register::R4 => write!(f, "R4"),
-            Register::R5 => write!(f, "R5"),
-            Register::R6 => write!(f, "R6"),
-            Register::R7 => write!(f, "R7"),
-            Register::R8 => write!(f, "R8"),
-            Register::R9 => write!(f, "R9"),
-            Register::R10 => write!(f, "R10"),
-            Register::R11 => write!(f, "R11"),
-            Register::R12 => write!(f, "R12"),
-            Register::Rbp => write!(f, "Rbp"),
-            Register::Rsp => write!(f, "Rsp"),
-            Register::Rpc => write!(f, "Rpc"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StackOffset(usize);
-
-impl StackOffset {
-    pub fn new(offset: usize) -> StackOffset {
-        StackOffset(offset)
-    }
-
-    pub fn as_usize(&self) -> usize {
-        self.0
-    }
-}
-
-impl fmt::Display for StackOffset {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "rbp+{}", self.0)
-    }
-}
 
 pub struct Environment {
     map: HashMap<String, Value>,
@@ -172,7 +58,7 @@ impl Vm {
         }
     }
 
-    pub fn execute(&mut self, program: Instructions, env: &Environment) -> Result<Value, Error> {
+    pub fn execute(&mut self, program: Module, env: &Environment) -> Result<Value, Error> {
         for inst in program {
             let Instruction {
                 opcode,
@@ -208,6 +94,10 @@ impl Vm {
                 OpCode::LoadEnv => {
                     let value = self.load_env(operand1, env)?;
                     self.store_operand(value, operand0);
+                }
+                OpCode::Return => {
+                    let value = self.load_operand(operand0);
+                    return Ok(value);
                 }
                 OpCode::Add => implement_binop_instruction!(Ops::add),
                 OpCode::Sub => implement_binop_instruction!(Ops::sub),
@@ -250,7 +140,7 @@ impl Vm {
 
     fn load_env(&self, operand: Operand, environment: &Environment) -> Result<Value, Error> {
         match operand {
-            Operand::Immed(PrimitiveType::String(env)) => {
+            Operand::Immed(Primitive::String(env)) => {
                 environment.get(&env).ok_or(Error::UndefinedVariable(env))
             }
             _ => Err(Error::InvalidArgument),
@@ -263,55 +153,64 @@ impl Vm {
 }
 
 pub trait Ops
-    where 
-        Self: Sized,
+where
+    Self: Sized,
 {
-    fn add(self, rhs: Value) -> Result<Value, Error> {
+    fn add(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn sub(self, rhs: Value) -> Result<Value, Error> {
+    fn sub(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn mul(self, rhs: Value) -> Result<Value, Error> {
+    fn mul(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn div(self, rhs: Value) -> Result<Value, Error> {
+    fn div(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn mod_(self, rhs: Value) -> Result<Value, Error> {
+    fn mod_(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn pow(self, rhs: Value) -> Result<Value, Error> {
+    fn pow(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn and(self, rhs: Value) -> Result<Value, Error> {
+    fn and(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn or(self, rhs: Value) -> Result<Value, Error> {
+    fn or(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn gt(self, rhs: Value) -> Result<Value, Error> {
+    fn gt(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn gte(self, rhs: Value) -> Result<Value, Error> {
+    fn gte(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn lt(self, rhs: Value) -> Result<Value, Error> {
+    fn lt(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn lte(self, rhs: Value) -> Result<Value, Error> {
+    fn lte(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn eq(self, rhs: Value) -> Result<Value, Error> {
+    fn eq(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn ne(self, rhs: Value) -> Result<Value, Error> {
+    fn ne(self, _rhs: Value) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn call(self, args: &[Value]) -> Result<Value, Error> {
+    fn neg(self) -> Result<Value, Error> {
         Err(Error::OpUnimplemented)
     }
-    fn index(self, index: Value) -> Result<Value, Error> {
+    fn not(self) -> Result<Value, Error> {
+        Err(Error::OpUnimplemented)
+    }
+    fn in_(self, _ele: Value) -> Result<Value, Error> {
+        Err(Error::OpUnimplemented)
+    }
+    fn index(self, _index: Value) -> Result<Value, Error> {
+        Err(Error::OpUnimplemented)
+    }
+    fn call(self, _args: &[Value]) -> Result<Option<Value>, Error> {
         Err(Error::OpUnimplemented)
     }
 }
@@ -462,11 +361,63 @@ impl Ops for Value {
         }
     }
 
-    fn call(self, args: &[Value]) -> Result<Value, Error> {
-        unimplemented!()
+    fn not(self) -> Result<Value, Error> {
+        match self {
+            Value::Bool(b) => Ok(Value::Bool(!b)),
+            _ => Err(Error::OpUnimplemented),
+        }
+    }
+
+    fn neg(self) -> Result<Value, Error> {
+        match self {
+            Value::Integer(i) => Ok(Value::Integer(-i)),
+            Value::Float(f) => Ok(Value::Float(-f)),
+            _ => Err(Error::OpUnimplemented),
+        }
+    }
+
+    fn in_(self, ele: Value) -> Result<Value, Error> {
+        match (self, ele) {
+            (Value::Array(array), ele) => {
+                for item in &array {
+                    if item == &ele {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+
+                Ok(Value::Bool(false))
+            }
+            (Value::Dictionary(map), Value::String(key)) => {
+                Ok(Value::Bool(map.get(key.as_ref()).is_some()))
+            }
+            _ => Err(Error::OpUnimplemented),
+        }
     }
 
     fn index(self, index: Value) -> Result<Value, Error> {
-        unimplemented!()
+        match (self, index) {
+            (Value::Array(array), Value::Integer(i)) => {
+                if i >= 0 && (i as usize) < array.len() {
+                    Ok(array[i as usize].clone())
+                } else {
+                    Err(Error::IndexOutOfBounds(i as usize, array.len()))
+                }
+            }
+            (Value::Dictionary(map), Value::String(key)) => {
+                if let Some(value) = map.get(key.as_ref()) {
+                    Ok(value.clone())
+                } else {
+                    Err(Error::EntryNotFound(key))
+                }
+            }
+            _ => Err(Error::OpUnimplemented),
+        }
+    }
+
+    fn call(self, args: &[Value]) -> Result<Option<Value>, Error> {
+        match self {
+            Value::Dynamic(obj) => obj.call(args),
+            _ => Err(Error::OpUnimplemented),
+        }
     }
 }
