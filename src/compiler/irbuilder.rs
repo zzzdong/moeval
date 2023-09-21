@@ -1,9 +1,8 @@
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use crate::ast::*;
-use crate::instruction::{Instruction, Module, OpCode, Operand};
-use crate::instruction::{Register, StackSlot, VirtReg};
+use crate::instruction::VirtReg;
+use crate::instruction::{Instruction, Module, Opcode, Operand};
 use crate::value::Primitive;
 
 #[derive(Debug, Clone)]
@@ -42,7 +41,7 @@ impl IRBuilder {
     pub fn build_expr(expr: Expression) -> Module {
         let mut builder = IRBuilder::new();
         let ret = builder.build_expr_inner(expr);
-        builder.emit(OpCode::Return, &[ret]);
+        builder.emit(Opcode::Return, &[ret]);
         builder.instructions()
     }
 
@@ -55,7 +54,7 @@ impl IRBuilder {
                     None => {
                         let dest = self.alloc_virt_reg();
                         self.emit(
-                            OpCode::LoadEnv,
+                            Opcode::LoadEnv,
                             &[
                                 dest.clone(),
                                 Operand::Immed(Primitive::String(name.clone().into())),
@@ -78,7 +77,7 @@ impl IRBuilder {
                             // load member
                             let dest = self.alloc_virt_reg();
                             self.emit(
-                                OpCode::LoadMember,
+                                Opcode::LoadMember,
                                 &[
                                     dest.clone(),
                                     lhs,
@@ -93,7 +92,7 @@ impl IRBuilder {
                     _ => {
                         let lhs = self.build_expr_inner(*left);
                         let rhs = self.build_expr_inner(*right);
-                        let op = OpCode::try_from(op).unwrap();
+                        let op = Opcode::try_from(op).unwrap();
                         let dest = self.alloc_virt_reg();
 
                         self.emit(op, &[dest.clone(), lhs, rhs]);
@@ -105,27 +104,27 @@ impl IRBuilder {
             Expression::UnaryOperation(UnaryOperationExpression { op, expr }) => {
                 let operand = self.build_expr_inner(*expr);
                 let dest = self.alloc_virt_reg();
-                let op = OpCode::try_from(op).unwrap();
+                let op = Opcode::try_from(op).unwrap();
                 self.emit(op, &[dest.clone(), operand]);
                 dest
             }
             Expression::Grouped(GroupedExpression(expr)) => self.build_expr_inner(*expr),
             Expression::Array(ArrayExpression { elements }) => {
                 let array = self.alloc_virt_reg();
-                self.emit(OpCode::NewArray, &[array.clone()]);
+                self.emit(Opcode::NewArray, &[array.clone()]);
                 for element in elements {
                     let item = self.build_expr_inner(element);
-                    self.emit(OpCode::ArrayPush, &[array.clone(), item]);
+                    self.emit(Opcode::ArrayPush, &[array.clone(), item]);
                 }
                 array
             }
             Expression::Dictionary(DictionaryExpression { elements }) => {
                 let dict = self.alloc_virt_reg();
-                self.emit(OpCode::NewDictionary, &[dict.clone()]);
+                self.emit(Opcode::NewDictionary, &[dict.clone()]);
                 for kv in elements {
                     let key = Operand::Immed(Primitive::String(kv.key.name.into()));
                     let value = self.build_expr_inner(*kv.value);
-                    self.emit(OpCode::DictionaryPut, &[dict.clone(), key, value]);
+                    self.emit(Opcode::DictionaryPut, &[dict.clone(), key, value]);
                 }
                 dict
             }
@@ -133,7 +132,7 @@ impl IRBuilder {
                 let object = self.build_expr_inner(*object);
                 let index = self.build_expr_inner(*index);
                 let result = self.alloc_virt_reg();
-                self.emit(OpCode::Index, &[result.clone(), object, index]);
+                self.emit(Opcode::Index, &[result.clone(), object, index]);
                 result
             }
             e => {
@@ -158,7 +157,7 @@ impl IRBuilder {
         }
     }
 
-    fn emit(&mut self, opcode: OpCode, operands: &[Operand]) {
+    fn emit(&mut self, opcode: Opcode, operands: &[Operand]) {
         let _idx = self.instructions.len();
 
         let opcode = Instruction::new(

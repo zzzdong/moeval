@@ -43,11 +43,11 @@ impl ExprRewriter {
                 } else {
                     let lhs = self.simplify_expr(left);
                     let rhs = self.simplify_expr(right);
-                    if lhs.is_some() && rhs.is_some() {
+                    if let (Some(lhs), Some(rhs)) = (lhs, rhs) {
                         Some(Expression::BinaryOperation(BinaryOperationExpression {
                             op: *op,
-                            left: Box::new(lhs.unwrap()),
-                            right: Box::new(rhs.unwrap()),
+                            left: Box::new(lhs),
+                            right: Box::new(rhs),
                         }))
                     } else {
                         None

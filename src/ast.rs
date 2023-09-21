@@ -117,7 +117,6 @@ impl fmt::Display for UnaryOperationExpression {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub enum UnaryOperation {
     Negation,

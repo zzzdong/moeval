@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::{parser::ParseError, instruction::OpCode};
+use crate::{instruction::Opcode, parser::ParseError};
 
 #[derive(Debug)]
 pub enum Error {
     Parse(ParseError),
-    OpUnimplemented(OpCode),
+    OpUnimplemented(Opcode),
     OpIllegalOperate,
     InvalidArgument,
     UndefinedVariable(Arc<String>),

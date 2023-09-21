@@ -285,10 +285,7 @@ impl<'i> Parser<'i> {
                     Precedence::Lowest
                 }
             },
-            Some(Token::Keyword(kw)) => match kw {
-                Keyword::In => Precedence::Judge,
-                _ => Precedence::Lowest,
-            },
+            Some(Token::Keyword(Keyword::In)) => Precedence::Judge,
             _ => Precedence::Lowest,
         };
 
@@ -356,7 +353,6 @@ impl<'i> Parser<'i> {
     // }
 
     /// Consume and return the next token
-    #[must_use]
     fn consume_token(&mut self) -> Result<Pair<'_>, ParseError> {
         match self.pairs.next() {
             Some(Ok(tok)) => Ok(tok),

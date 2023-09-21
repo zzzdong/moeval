@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     error::Error,
-    instruction::{Instruction, Module, OpCode, Operand, Register},
+    instruction::{Instruction, Module, Opcode, Operand, Register},
     value::{Primitive, Value},
 };
 
@@ -27,6 +27,12 @@ impl Environment {
 
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
         self.map.get_mut(name)
+    }
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Environment::new()
     }
 }
 
@@ -77,49 +83,49 @@ impl Vm {
             }
 
             match opcode {
-                OpCode::Push => {
+                Opcode::Push => {
                     let value = self.load_operand(operand0);
                     self.stack.push(value);
                     self.stack_pointer += 1;
                 }
-                OpCode::Pop => {
+                Opcode::Pop => {
                     let value = self.stack.pop().unwrap();
                     self.store_operand(value, operand0);
                     self.stack_pointer -= 1;
                 }
-                OpCode::Move => {
+                Opcode::Move => {
                     let value = self.load_operand(operand1);
                     self.store_operand(value, operand0);
                 }
-                OpCode::LoadEnv => {
+                Opcode::LoadEnv => {
                     let value = self.load_env(operand1, env)?;
                     self.store_operand(value, operand0);
                 }
-                OpCode::Return => {
+                Opcode::Return => {
                     let value = self.load_operand(operand0);
                     return Ok(value);
                 }
-                OpCode::Add => implement_binop_instruction!(Ops::add),
-                OpCode::Sub => implement_binop_instruction!(Ops::sub),
-                OpCode::Mul => implement_binop_instruction!(Ops::mul),
-                OpCode::Div => implement_binop_instruction!(Ops::div),
-                OpCode::Mod => implement_binop_instruction!(Ops::mod_),
-                OpCode::Pow => implement_binop_instruction!(Ops::pow),
-                OpCode::And => implement_binop_instruction!(Ops::and),
-                OpCode::Or => implement_binop_instruction!(Ops::or),
-                OpCode::IfEqual => implement_binop_instruction!(Ops::eq),
-                OpCode::IfNotEqual => implement_binop_instruction!(Ops::ne),
-                OpCode::IfGreater => implement_binop_instruction!(Ops::gt),
-                OpCode::IfGreaterOrEqual => implement_binop_instruction!(Ops::gte),
-                OpCode::IfLess => implement_binop_instruction!(Ops::lt),
-                OpCode::IfLessOrEqual => implement_binop_instruction!(Ops::lte),
-                OpCode::In => implement_binop_instruction!(Ops::in_),
-                OpCode::Index => implement_binop_instruction!(Ops::index),
-                OpCode::NewArray => {
+                Opcode::Add => implement_binop_instruction!(Ops::add),
+                Opcode::Sub => implement_binop_instruction!(Ops::sub),
+                Opcode::Mul => implement_binop_instruction!(Ops::mul),
+                Opcode::Div => implement_binop_instruction!(Ops::div),
+                Opcode::Mod => implement_binop_instruction!(Ops::mod_),
+                Opcode::Pow => implement_binop_instruction!(Ops::pow),
+                Opcode::And => implement_binop_instruction!(Ops::and),
+                Opcode::Or => implement_binop_instruction!(Ops::or),
+                Opcode::IfEqual => implement_binop_instruction!(Ops::eq),
+                Opcode::IfNotEqual => implement_binop_instruction!(Ops::ne),
+                Opcode::IfGreater => implement_binop_instruction!(Ops::gt),
+                Opcode::IfGreaterOrEqual => implement_binop_instruction!(Ops::gte),
+                Opcode::IfLess => implement_binop_instruction!(Ops::lt),
+                Opcode::IfLessOrEqual => implement_binop_instruction!(Ops::lte),
+                Opcode::In => implement_binop_instruction!(Ops::in_),
+                Opcode::Index => implement_binop_instruction!(Ops::index),
+                Opcode::NewArray => {
                     let array: Vec<Value> = Vec::new();
                     self.store_operand(Value::Array(array), operand0);
                 }
-                OpCode::ArrayPush => {
+                Opcode::ArrayPush => {
                     let value = self.load_operand(operand1);
                     let array = self.load_operand_mut(operand0);
                     match array {
@@ -129,11 +135,11 @@ impl Vm {
                         _ => return Err(Error::InvalidArgument),
                     }
                 }
-                OpCode::NewDictionary => {
+                Opcode::NewDictionary => {
                     let dict: HashMap<Arc<String>, Value> = HashMap::new();
                     self.store_operand(Value::Dictionary(dict), operand0);
                 }
-                OpCode::DictionaryPut => {
+                Opcode::DictionaryPut => {
                     let key = self.load_operand(operand1);
                     let value = self.load_operand(operand2);
                     let dict = self.load_operand_mut(operand0);
@@ -160,7 +166,7 @@ impl Vm {
         }
     }
 
-    fn load_operand_mut<'a>(&'a mut self, operand: Operand) -> &'a mut Value {
+    fn load_operand_mut(&mut self, operand: Operand) -> &mut Value {
         match operand {
             Operand::Register(reg) => &mut self.registers[reg as usize],
             Operand::Stack(stack) => &mut self.stack[self.frame_pointer + stack.offset],
@@ -191,66 +197,71 @@ impl Vm {
     }
 }
 
+impl Default for Vm {
+    fn default() -> Self {
+        Vm::new()
+    }
+}
 pub trait Ops
 where
     Self: Sized,
 {
     fn add(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Add))
+        Err(Error::OpUnimplemented(Opcode::Add))
     }
     fn sub(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Sub))
+        Err(Error::OpUnimplemented(Opcode::Sub))
     }
     fn mul(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Sub))
+        Err(Error::OpUnimplemented(Opcode::Sub))
     }
     fn div(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Div))
+        Err(Error::OpUnimplemented(Opcode::Div))
     }
     fn mod_(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Mod))
+        Err(Error::OpUnimplemented(Opcode::Mod))
     }
     fn pow(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Pow))
+        Err(Error::OpUnimplemented(Opcode::Pow))
     }
     fn and(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::And))
+        Err(Error::OpUnimplemented(Opcode::And))
     }
     fn or(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Or))
+        Err(Error::OpUnimplemented(Opcode::Or))
     }
     fn gt(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfGreater))
+        Err(Error::OpUnimplemented(Opcode::IfGreater))
     }
     fn gte(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfGreaterOrEqual))
+        Err(Error::OpUnimplemented(Opcode::IfGreaterOrEqual))
     }
     fn lt(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfLess))
+        Err(Error::OpUnimplemented(Opcode::IfLess))
     }
     fn lte(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfLessOrEqual))
+        Err(Error::OpUnimplemented(Opcode::IfLessOrEqual))
     }
     fn eq(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfEqual))
+        Err(Error::OpUnimplemented(Opcode::IfEqual))
     }
     fn ne(self, _rhs: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::IfNotEqual))
+        Err(Error::OpUnimplemented(Opcode::IfNotEqual))
     }
     fn neg(self) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Negate))
+        Err(Error::OpUnimplemented(Opcode::Negate))
     }
     fn not(self) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Not))
+        Err(Error::OpUnimplemented(Opcode::Not))
     }
     fn in_(self, _obj: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::In))
+        Err(Error::OpUnimplemented(Opcode::In))
     }
     fn index(self, _index: Value) -> Result<Value, Error> {
-        Err(Error::OpUnimplemented(OpCode::Index))
+        Err(Error::OpUnimplemented(Opcode::Index))
     }
     fn call(self, _args: &[Value]) -> Result<Option<Value>, Error> {
-        Err(Error::OpUnimplemented(OpCode::Call))
+        Err(Error::OpUnimplemented(Opcode::Call))
     }
 }
 
@@ -429,8 +440,7 @@ impl Ops for Value {
             (Value::Dictionary(map), Value::String(key)) => {
                 Ok(Value::Bool(map.get(key.as_ref()).is_some()))
             }
-            // _ => Err(Error::OpIllegalOperate),
-            (obj, ele) => { println!("{:?} in {:?} ", ele, obj); Err(Error::OpIllegalOperate)}
+            _ => Err(Error::OpIllegalOperate),
         }
     }
 
@@ -457,7 +467,7 @@ impl Ops for Value {
     fn call(self, args: &[Value]) -> Result<Option<Value>, Error> {
         match self {
             Value::Dynamic(obj) => obj.call(args),
-            _ => Err(Error::OpUnimplemented(OpCode::Call)),
+            _ => Err(Error::OpUnimplemented(Opcode::Call)),
         }
     }
 }

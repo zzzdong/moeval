@@ -1,7 +1,7 @@
 use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
-    instruction::{Instruction, Module, OpCode, Operand},
+    instruction::{Instruction, Module, Opcode, Operand},
     instruction::{Register, StackSlot, VirtReg},
     value::Primitive,
 };
@@ -28,7 +28,7 @@ impl VirtRegRewriter {
         let stack_size = virt_reg_map.allocated_stack_size();
         if stack_size > 0 {
             output.push(Instruction::single(
-                OpCode::StackAlloc,
+                Opcode::StackAlloc,
                 Operand::Immed(Primitive::Integer(stack_size as i64)),
             ));
         }
@@ -202,7 +202,7 @@ impl VirtRegMap {
                         let tmp_register = Register::R0;
 
                         insts.push(Instruction::single(
-                            OpCode::Push,
+                            Opcode::Push,
                             Operand::Register(tmp_register),
                         ));
                         insts.push(Instruction::new(
@@ -212,12 +212,12 @@ impl VirtRegMap {
                             operand2,
                         ));
                         insts.push(Instruction::two(
-                            OpCode::Store,
+                            Opcode::Store,
                             Operand::Stack(off),
                             Operand::Register(tmp_register),
                         ));
                         insts.push(Instruction::single(
-                            OpCode::Pop,
+                            Opcode::Pop,
                             Operand::Register(tmp_register),
                         ));
                     }
