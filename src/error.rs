@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use crate::parser::ParseError;
+use crate::{parser::ParseError, instruction::OpCode};
 
 #[derive(Debug)]
 pub enum Error {
     Parse(ParseError),
-    OpUnimplemented,
+    OpUnimplemented(OpCode),
     OpIllegalOperate,
     InvalidArgument,
     UndefinedVariable(Arc<String>),
@@ -17,7 +17,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::Parse(e) => write!(f, "Parser error: {:?}", e),
-            Error::OpUnimplemented => write!(f, "Unimplemented operator"),
+            Error::OpUnimplemented(opcode) => write!(f, "Unimplemented operator: {:?}", opcode),
             Error::OpIllegalOperate => write!(f, "Illegal operator"),
             Error::InvalidArgument => write!(f, "Invalid argument"),
             Error::UndefinedVariable(v) => write!(f, "Undefined variable: {}", v),

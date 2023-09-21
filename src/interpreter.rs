@@ -32,7 +32,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_interpreter() {
+    fn test_simple() {
         let source = r#"1+2+3+4+5+6+7+8+9"#;
 
         let mut env = Environment::new();
@@ -40,5 +40,27 @@ mod test {
         let ret = Interpreter::eval(source, &env).unwrap();
 
         assert_eq!(ret, Value::Integer(45));
+    }
+
+    #[test]
+    fn test_array() {
+        let source = r#"["s", 100][1] > 0"#;
+
+        let mut env = Environment::new();
+
+        let ret = Interpreter::eval(source, &env).unwrap();
+
+        assert_eq!(ret, Value::Bool(true));
+    }
+
+    #[test]
+    fn test_dict() {
+        let source = r#""s" in {s: "String", i: 100}"#;
+
+        let mut env = Environment::new();
+
+        let ret = Interpreter::eval(source, &env).unwrap();
+
+        assert_eq!(ret, Value::Bool(true));
     }
 }

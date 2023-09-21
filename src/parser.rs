@@ -89,14 +89,18 @@ impl<'i> Parser<'i> {
 
     fn parse_prefix(&mut self) -> Result<Expression, ParseError> {
         match self.peek_token()?.as_deref() {
-            Some(Token::Symbol(Symbol::Minus)) => Ok(Expression::PrefixOperation(
-                PrefixOperationExpression::Negation(Box::new(
-                    self.parse_subexpr(Precedence::Prefix)?,
-                )),
-            )),
-            Some(Token::Symbol(Symbol::Not)) => Ok(Expression::PrefixOperation(
-                PrefixOperationExpression::Not(Box::new(self.parse_subexpr(Precedence::Prefix)?)),
-            )),
+            Some(Token::Symbol(Symbol::Minus)) => {
+                Ok(Expression::UnaryOperation(UnaryOperationExpression {
+                    op: UnaryOperation::Negation,
+                    expr: Box::new(self.parse_subexpr(Precedence::Prefix)?),
+                }))
+            }
+            Some(Token::Symbol(Symbol::Not)) => {
+                Ok(Expression::UnaryOperation(UnaryOperationExpression {
+                    op: UnaryOperation::Not,
+                    expr: Box::new(self.parse_subexpr(Precedence::Prefix)?),
+                }))
+            }
             _ => self.parse_primary(),
         }
     }
@@ -132,9 +136,10 @@ impl<'i> Parser<'i> {
                         index: Box::new(index),
                     }))
                 }
-                Symbol::Question => Ok(Expression::PostfixOperation(
-                    PostfixOperationExpression::Try(Box::new(expr)),
-                )),
+                Symbol::Question => Ok(Expression::UnaryOperation(UnaryOperationExpression {
+                    op: UnaryOperation::Try,
+                    expr: Box::new(expr),
+                })),
                 _ => {
                     if let Ok(op) = sym.try_into() {
                         Ok(Expression::BinaryOperation(BinaryOperationExpression {

@@ -2,7 +2,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     instruction::{Instruction, Module, OpCode, Operand},
-    instruction::{Register, StackOffset, VirtReg},
+    instruction::{Register, StackSlot, VirtReg},
     value::Primitive,
 };
 
@@ -25,11 +25,11 @@ impl VirtRegRewriter {
         let virt_reg_map = self.regalloc.line_scan(&input);
 
         // alloc stack space
-        let stack_offset = virt_reg_map.max_stack_offset();
-        if let Some(stack_offset) = stack_offset {
+        let stack_size = virt_reg_map.allocated_stack_size();
+        if stack_size > 0 {
             output.push(Instruction::single(
                 OpCode::StackAlloc,
-                Operand::Immed(Primitive::Integer(stack_offset as i64)),
+                Operand::Immed(Primitive::Integer(stack_size as i64)),
             ));
         }
 
@@ -52,7 +52,7 @@ impl ModuleRewriter for VirtRegRewriter {
 enum Address {
     None,
     Register(Register),
-    StackOffset(StackOffset),
+    Stack(StackSlot),
 }
 
 #[derive(Debug, Clone, Copy, Hash)]
@@ -104,6 +104,23 @@ impl RegisterPool {
 }
 
 #[derive(Debug)]
+struct StackFrame {
+    allocated_size: usize,
+}
+
+impl StackFrame {
+    fn new() -> Self {
+        StackFrame { allocated_size: 0 }
+    }
+
+    fn alloc(&mut self, size: usize) -> StackSlot {
+        let offset = self.allocated_size;
+        self.allocated_size += size;
+        StackSlot::new(offset, size)
+    }
+}
+
+#[derive(Debug)]
 struct VirtRegMap {
     intervals: Vec<LiveInterval>,
     virt_reg_map: HashMap<VirtReg, LiveInterval>,
@@ -121,23 +138,15 @@ impl VirtRegMap {
         }
     }
 
-    fn max_stack_offset(&self) -> Option<usize> {
-        let mut stack_offset = None;
+    fn allocated_stack_size(&self) -> usize {
+        let mut stack_size = 0;
         for interval in &self.intervals {
-            if let Address::StackOffset(offset) = interval.address {
-                match stack_offset {
-                    Some(off) if offset.as_usize() > off => {
-                        stack_offset = Some(offset.as_usize());
-                    }
-                    None => {
-                        stack_offset = Some(offset.as_usize());
-                    }
-                    _ => {}
-                }
+            if let Address::Stack(stack_slot) = interval.address {
+                stack_size += stack_slot.size;
             }
         }
 
-        stack_offset
+        stack_size
     }
 
     fn rewrite(&self, inst: Instruction) -> Vec<Instruction> {
@@ -160,7 +169,7 @@ impl VirtRegMap {
                 match interval.address {
                     Address::None => unreachable!(),
                     Address::Register(reg) => Operand::Register(reg),
-                    Address::StackOffset(off) => Operand::Stack(off),
+                    Address::Stack(off) => Operand::Stack(off),
                 }
             }
             _ => operand1,
@@ -175,7 +184,7 @@ impl VirtRegMap {
                 match interval.address {
                     Address::None => unreachable!(),
                     Address::Register(reg) => Operand::Register(reg),
-                    Address::StackOffset(off) => Operand::Stack(off),
+                    Address::Stack(off) => Operand::Stack(off),
                 }
             }
             _ => operand2,
@@ -189,7 +198,7 @@ impl VirtRegMap {
                     .get(&var)
                     .expect("var not found in virt_reg_map");
                 match interval.address {
-                    Address::StackOffset(off) => {
+                    Address::Stack(off) => {
                         let tmp_register = Register::R0;
 
                         insts.push(Instruction::single(
@@ -239,8 +248,8 @@ impl VirtRegMap {
 struct RegisterAllocator {
     live_intervals: HashMap<VirtReg, LiveInterval>,
     active_intervals: Vec<LiveInterval>,
-    pool: RegisterPool,
-    curr_stack_location: usize,
+    registers: RegisterPool,
+    stack: StackFrame,
 }
 
 impl RegisterAllocator {
@@ -248,8 +257,8 @@ impl RegisterAllocator {
         Self {
             live_intervals: HashMap::new(),
             active_intervals: Vec::new(),
-            pool: RegisterPool::new(registers),
-            curr_stack_location: 0,
+            registers: RegisterPool::new(registers),
+            stack: StackFrame::new(),
         }
     }
 
@@ -260,10 +269,10 @@ impl RegisterAllocator {
 
         for (_i, interval) in live_intervals.iter_mut().enumerate() {
             self.expire_old_intervals(interval);
-            if self.pool.is_empty() {
+            if self.registers.is_empty() {
                 self.spill_at_interval(interval);
             } else {
-                interval.address = Address::Register(self.pool.alloc_register());
+                interval.address = Address::Register(self.registers.alloc_register());
                 self.active_intervals.sort_by_key(|interval| interval.end);
                 self.active_intervals.push(*interval);
             }
@@ -319,7 +328,7 @@ impl RegisterAllocator {
             }
             to_remove.push(active.address);
             if let Address::Register(reg) = active.address {
-                self.pool.free_register(reg);
+                self.registers.free_register(reg);
             } else {
                 panic!("must expire a Resigter")
             }
@@ -334,24 +343,18 @@ impl RegisterAllocator {
             return;
         }
 
-        let stack_location = self.new_stack_location();
+        let stack_slot = self.stack.alloc(1);
         let spill = self.active_intervals.last_mut().unwrap();
 
         if spill.end > interval.end {
             interval.address = spill.address;
-            spill.address = stack_location;
+            spill.address = Address::Stack(stack_slot);
 
             self.active_intervals.pop();
             self.active_intervals.sort_by_key(|interval| interval.end);
             self.active_intervals.push(*interval);
         } else {
-            interval.address = stack_location;
+            interval.address = Address::Stack(stack_slot);
         }
-    }
-
-    fn new_stack_location(&mut self) -> Address {
-        let old = self.curr_stack_location;
-        self.curr_stack_location += 1;
-        Address::StackOffset(StackOffset::new(old))
     }
 }

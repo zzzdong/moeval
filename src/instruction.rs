@@ -1,6 +1,6 @@
 use std::{fmt, ops::Index};
 
-use crate::{ast::BinaryOperation, value::Primitive};
+use crate::{ast::{BinaryOperation, UnaryOperation}, value::Primitive};
 
 #[derive(Debug, Clone, Copy)]
 pub enum OpCode {
@@ -34,6 +34,7 @@ pub enum OpCode {
     ArrayPush,
     NewDictionary,
     DictionaryPut,
+    Index,
     Call,
     Return,
 }
@@ -67,11 +68,26 @@ impl TryFrom<BinaryOperation> for OpCode {
     }
 }
 
+impl TryFrom<UnaryOperation> for OpCode {
+    type Error = ();
+
+    fn try_from(op: UnaryOperation) -> Result<Self, Self::Error> {
+        Ok(match op {
+            UnaryOperation::Negation => OpCode::Negate,
+            UnaryOperation::Not => OpCode::Not,
+            UnaryOperation::Try => unimplemented!(), //OpCode::Try,
+            _ => {
+                return Err(());
+            }
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
     Immed(Primitive),
     Register(Register),
-    Stack(StackOffset),
+    Stack(StackSlot),
     VirtReg(VirtReg),
     None,
 }
@@ -84,6 +100,239 @@ impl fmt::Display for Operand {
             Operand::VirtReg(vreg) => write!(f, "{}", vreg),
             Operand::Stack(s) => write!(f, "{}", s),
             Operand::None => write!(f, ""),
+        }
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum InstructionData {
+    LoadEnv {
+        opcode: OpCode,
+        dest: Operand,
+        env_var: String,
+    },
+    LoadMember {
+        opcode: OpCode,
+        dest: Operand,
+        object: Operand,
+        member: String,
+    },
+    Load {
+        opcode: OpCode,
+        dest: Operand,
+        source: Operand,
+    },
+    Store {
+        opcode: OpCode,
+        source: Operand,
+        dest: Operand,
+    },
+    AllocStack {
+        opcode: OpCode,
+        size: usize,
+    },
+    Push {
+        opcode: OpCode,
+        value: Operand,
+    },
+    Pop {
+        opcode: OpCode,
+        dest: Operand,
+    },
+    Move {
+        opcode: OpCode,
+        dest: Operand,
+        src: Operand,
+    },
+    Unary {
+        opcode: OpCode,
+        dest: Operand,
+        src: Operand,
+    },
+    Binary {
+        opcode: OpCode,
+        dest: Operand,
+        lhs: Operand,
+        rhs: Operand,
+    },
+    Call {
+        opcode: OpCode,
+        dest: Operand,
+        func: Operand,
+    },
+    Return {
+        opcode: OpCode,
+        ret: Operand,
+    },
+    NewArray {
+        opcode: OpCode,
+        dest: Operand,
+    },
+    ArrayPush {
+        opcode: OpCode,
+        array: Operand,
+        element: Operand,
+    },
+    NewDictionary {
+        opcode: OpCode,
+        dest: Operand,
+    },
+    DictionaryPut {
+        opcode: OpCode,
+        dict: Operand,
+        key: Operand,
+        value: Operand,
+    },
+    Index {
+        opcode: OpCode,
+        dest: Operand,
+        object: Operand,
+        index: Operand,
+    }
+}
+
+
+impl InstructionData {
+    pub fn load_env(dest: Operand, env_var: &str) -> Self {
+        InstructionData::LoadEnv {
+            opcode: OpCode::LoadEnv,
+            dest,
+            env_var: env_var.to_string(),
+        }
+    }
+
+    pub fn load_member(dest: Operand, object: Operand, member: &str) -> Self {
+        InstructionData::LoadMember {
+            opcode: OpCode::LoadMember,
+            dest,
+            object,
+            member: member.to_string(),
+        }
+    }
+    pub fn load(dest: Operand, source: Operand) -> Self {
+        InstructionData::Load {
+            opcode: OpCode::Load,
+            dest,
+            source,
+        }
+    }
+
+    pub fn store(source: Operand, dest: Operand) -> Self {
+        InstructionData::Store {
+            opcode: OpCode::Store,
+            source,
+            dest,
+        }
+    }
+
+    pub fn push(value: Operand) -> Self {
+        InstructionData::Push { opcode: OpCode::Push, value }
+    }
+
+    pub fn pop( dest: Operand) -> Self {
+        InstructionData::Pop { opcode: OpCode::Pop, dest }
+    }
+
+
+    pub fn move_(dest: Operand, src: Operand) -> Self {
+        InstructionData::Move { opcode: OpCode::Move, dest, src}
+    }
+
+    pub fn unary(opcode: OpCode, dest: Operand, src: Operand) -> Self {
+        InstructionData::Unary { opcode, dest, src }
+    }
+
+    pub fn binary(opcode: OpCode, dest: Operand, lhs: Operand, rhs: Operand) -> Self {
+        InstructionData::Binary { opcode, dest, lhs, rhs }
+    }
+
+    pub fn call(dest: Operand, func: Operand) -> Self {
+        InstructionData::Call { opcode: OpCode::Call, dest, func }
+    }
+
+    pub fn return_(ret: Operand) -> Self {
+        InstructionData::Return { opcode: OpCode::Return, ret }
+    }
+
+    pub fn new_array(dest: Operand) -> Self {
+        InstructionData::NewArray { opcode: OpCode::NewArray, dest }
+    }
+
+    pub fn array_push(array: Operand, element: Operand) -> Self {
+        InstructionData::ArrayPush { opcode: OpCode::ArrayPush, array, element}
+    }
+
+    pub fn new_dict(dest: Operand) -> Self {
+        InstructionData::NewDictionary { opcode: OpCode::NewDictionary, dest }
+    }
+    pub fn dict_put(dict: Operand, key: Operand, value: Operand) -> Self {
+        InstructionData::DictionaryPut { opcode: OpCode::DictionaryPut, dict, key, value}
+    }
+
+    pub fn index(dest: Operand, object: Operand, index: Operand) -> Self {
+        InstructionData::Index { opcode: OpCode::Index, dest, object, index}
+    }
+
+    pub(crate) fn alloc_stack(size: usize) -> InstructionData {
+        InstructionData::AllocStack { opcode: OpCode::StackAlloc, size }
+    }
+}
+
+impl fmt::Display for InstructionData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InstructionData::LoadEnv { opcode, dest, env_var } => {
+                write!(f, "{:?} {} {}", opcode, dest, env_var)
+            }
+            InstructionData::LoadMember { opcode, dest, object: source, member } => {
+                write!(f, "{:?} {} {} {}", opcode, dest, source, member)
+            }
+            InstructionData::Load { opcode, dest, source } => {
+                write!(f, "{:?} {} {}", opcode, dest, source)
+            }
+            InstructionData::Store { opcode, source, dest } => {
+                write!(f, "{:?} {} {}", opcode, source, dest)
+            }
+            InstructionData::Unary { opcode, dest, src } => {
+                write!(f, "{:?} {} {}", opcode, dest, src)
+            }
+            InstructionData::Binary { opcode, dest, lhs, rhs } => {
+                write!(f, "{:?} {} {} {}", opcode, dest, lhs, rhs)
+            }
+            InstructionData::Push { opcode, value } => {
+                write!(f, "{:?} {}", opcode, value)
+            }
+            InstructionData::Pop { opcode, dest } => {
+                write!(f, "{:?} {}", opcode, dest)
+            }
+            InstructionData::Move { opcode, dest, src } => {
+                write!(f, "{:?} {} {}", opcode, dest, src)
+            }
+            InstructionData::Call { opcode, dest, func } => {
+                write!(f, "{:?} {} {}", opcode, dest, func)
+            }
+            InstructionData::Return { opcode, ret } => {
+                write!(f, "{:?} {}", opcode, ret)
+            }
+            InstructionData::NewArray { opcode, dest } => {
+                write!(f, "{:?} {}", opcode, dest)
+            }
+            InstructionData::NewDictionary { opcode, dest } => {
+                write!(f, "{:?} {}", opcode, dest)
+            }
+            InstructionData::ArrayPush { opcode, array, element } => {
+                write!(f, "{:?} {} {}", opcode, array, element)
+            }
+            InstructionData::DictionaryPut { opcode, dict, key, value } => {
+                write!(f, "{:?} {} {} {}", opcode, dict, key, value)
+            }
+            InstructionData::Index { opcode, dest, object, index } => {
+                write!(f, "{:?} {} {} {}", opcode, dest, object, index)
+            }
+            InstructionData::AllocStack { opcode, size } => {
+                write!(f, "{:?} {}", opcode, size)
+            }
         }
     }
 }
@@ -138,6 +387,7 @@ impl fmt::Display for Instruction {
         Ok(())
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct Module(Vec<Instruction>);
@@ -275,20 +525,26 @@ impl fmt::Display for Register {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StackOffset(usize);
+pub struct StackSlot {
+    pub offset: usize,
+    pub size: usize,
+}
 
-impl StackOffset {
-    pub fn new(offset: usize) -> StackOffset {
-        StackOffset(offset)
+impl StackSlot {
+    pub fn new(offset: usize, size: usize) -> StackSlot {
+        StackSlot {
+            offset,
+            size,
+        }
     }
 
-    pub fn as_usize(&self) -> usize {
-        self.0
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 }
 
-impl fmt::Display for StackOffset {
+impl fmt::Display for StackSlot {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "rbp+{}", self.0)
+        write!(f, "rbp+{}", self.offset)
     }
 }

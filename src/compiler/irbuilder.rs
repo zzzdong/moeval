@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::ast::*;
 use crate::instruction::{Instruction, Module, OpCode, Operand};
-use crate::instruction::{Register, StackOffset, VirtReg};
+use crate::instruction::{Register, StackSlot, VirtReg};
 use crate::value::Primitive;
 
 #[derive(Debug, Clone)]
@@ -102,16 +102,11 @@ impl IRBuilder {
                     }
                 }
             }
-            Expression::PrefixOperation(PrefixOperationExpression::Negation(expr)) => {
+            Expression::UnaryOperation(UnaryOperationExpression { op, expr }) => {
                 let operand = self.build_expr_inner(*expr);
                 let dest = self.alloc_virt_reg();
-                self.emit(OpCode::Negate, &[dest.clone(), operand]);
-                dest
-            }
-            Expression::PrefixOperation(PrefixOperationExpression::Not(expr)) => {
-                let operand = self.build_expr_inner(*expr);
-                let dest = self.alloc_virt_reg();
-                self.emit(OpCode::Not, &[dest.clone(), operand]);
+                let op = OpCode::try_from(op).unwrap();
+                self.emit(op, &[dest.clone(), operand]);
                 dest
             }
             Expression::Grouped(GroupedExpression(expr)) => self.build_expr_inner(*expr),
@@ -134,7 +129,13 @@ impl IRBuilder {
                 }
                 dict
             }
-
+            Expression::Index(IndexExpression { object, index }) => {
+                let object = self.build_expr_inner(*object);
+                let index = self.build_expr_inner(*index);
+                let result = self.alloc_virt_reg();
+                self.emit(OpCode::Index, &[result.clone(), object, index]);
+                result
+            }
             e => {
                 unreachable!("expr {:?}", e);
             }

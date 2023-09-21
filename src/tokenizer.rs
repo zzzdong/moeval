@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{borrow::Cow, ops::Deref, str::Chars};
 
-use crate::ast::{BinaryOperation, LiteralExpression};
+use crate::ast::{BinaryOperation, LiteralExpression, UnaryOperation};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -185,6 +185,20 @@ impl TryInto<BinaryOperation> for Symbol {
             Symbol::EqTidle => Ok(BinaryOperation::Matches),
 
             _ => Err(TokenError::new(format!("{:?} not a binary operator", self))),
+        }
+    }
+}
+
+impl TryInto<UnaryOperation> for Symbol {
+    type Error = TokenError;
+
+    fn try_into(self) -> Result<UnaryOperation, Self::Error> {
+        match self {
+            Symbol::Not => Ok(UnaryOperation::Not),
+            Symbol::Minus => Ok(UnaryOperation::Negation),
+            Symbol::Question => Ok(UnaryOperation::Try),
+
+            _ => Err(TokenError::new(format!("{:?} not a unary operator", self))),
         }
     }
 }

@@ -7,15 +7,13 @@ pub enum Expression {
     Identifier(IdentifierExpression),
     Literal(LiteralExpression),
     Grouped(GroupedExpression),
-    PrefixOperation(PrefixOperationExpression),
-    PostfixOperation(PostfixOperationExpression),
+    UnaryOperation(UnaryOperationExpression),
     BinaryOperation(BinaryOperationExpression),
     Array(ArrayExpression),
     Dictionary(DictionaryExpression),
     Index(IndexExpression),
     Call(CallExpression),
     Field(FieldExpression),
-    In(InExpression),
     Matches(MatchesExpression),
     Closure(ClosureExpression),
     Block(BlockExpression),
@@ -27,15 +25,13 @@ impl fmt::Display for Expression {
             Expression::Identifier(identifier) => write!(f, "{}", identifier),
             Expression::Literal(literal) => write!(f, "{}", literal),
             Expression::Grouped(grouped) => write!(f, "{}", grouped),
-            Expression::PrefixOperation(prefix) => write!(f, "{}", prefix),
-            Expression::PostfixOperation(postfix) => write!(f, "{}", postfix),
+            Expression::UnaryOperation(unary) => write!(f, "{}", unary),
             Expression::BinaryOperation(binary) => write!(f, "{}", binary),
             Expression::Array(array) => write!(f, "{}", array),
             Expression::Dictionary(dictionary) => write!(f, "{}", dictionary),
             Expression::Index(index) => write!(f, "{}", index),
             Expression::Call(call) => write!(f, "{}", call),
             Expression::Field(field) => write!(f, "{}", field),
-            Expression::In(in_) => write!(f, "{}", in_),
             Expression::Matches(matches) => write!(f, "{}", matches),
             Expression::Closure(closure) => write!(f, "{}", closure),
             Expression::Block(block) => write!(f, "{}", block),
@@ -106,29 +102,35 @@ impl fmt::Display for GroupedExpression {
 }
 
 #[derive(Debug)]
-pub enum PrefixOperationExpression {
-    Negation(Box<Expression>),
-    Not(Box<Expression>),
+pub struct UnaryOperationExpression {
+    pub op: UnaryOperation,
+    pub expr: Box<Expression>,
 }
 
-impl fmt::Display for PrefixOperationExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PrefixOperationExpression::Negation(e) => write!(f, "-{}", e),
-            PrefixOperationExpression::Not(e) => write!(f, "!{}", e),
+impl fmt::Display for UnaryOperationExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.op {
+            UnaryOperation::Negation => write!(f, "-{}", self.expr),
+            UnaryOperation::Not => write!(f, "!{}", self.expr),
+            UnaryOperation::Try => write!(f, "{}?", self.expr),
         }
     }
 }
 
-#[derive(Debug)]
-pub enum PostfixOperationExpression {
-    Try(Box<Expression>),
+
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryOperation {
+    Negation,
+    Not,
+    Try,
 }
 
-impl fmt::Display for PostfixOperationExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for UnaryOperation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PostfixOperationExpression::Try(e) => write!(f, "{}?", e),
+            UnaryOperation::Negation => write!(f, "-"),
+            UnaryOperation::Not => write!(f, "!"),
+            UnaryOperation::Try => write!(f, "?"),
         }
     }
 }
@@ -146,7 +148,7 @@ impl fmt::Display for BinaryOperationExpression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOperation {
     Addition,
     Subtraction,
@@ -205,8 +207,11 @@ pub struct ArrayExpression {
 impl fmt::Display for ArrayExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
-        for item in &self.elements {
-            write!(f, "{},", item)?;
+        if let Some((last, elements)) = self.elements.split_last() {
+            for item in elements {
+                write!(f, "{},", item)?;
+            }
+            write!(f, "{}", last)?;
         }
         write!(f, "]")
     }
@@ -220,9 +225,13 @@ pub struct DictionaryExpression {
 impl fmt::Display for DictionaryExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{")?;
-        for item in &self.elements {
-            write!(f, "{},", item)?;
+        if let Some((last, elements)) = self.elements.split_last() {
+            for item in elements {
+                write!(f, "{}: {},", item.key, item.value)?;
+            }
+            write!(f, "{}: {}", last.key, last.value)?;
         }
+
         write!(f, "}}")
     }
 }

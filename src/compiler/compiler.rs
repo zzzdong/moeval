@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use log::debug;
 
 use crate::{
     instruction::{Instruction, Module, OpCode, Operand},
-    instruction::{Register, StackOffset, VirtReg},
+    instruction::{Register, StackSlot, VirtReg},
     parser::Parser,
     Error, Value,
 };
@@ -22,16 +22,15 @@ impl Compiler {
     pub fn compile(&self, source: &str) -> Result<Module, Error> {
         let expr = Parser::parse(source)?;
 
-        println!("before: {:?}", expr);
+        debug!("before:\n {:?}", expr);
         // simplify expr
         let rewriter = ExprRewriter::new();
         let expr = rewriter.rewrite(expr);
-
-        println!("after: {:?}", expr);
+        debug!("after:\n {:?}", expr);
 
         let module = IRBuilder::build_expr(expr);
 
-        println!("before VirtRegRewriter: {}", module);
+        debug!("before VirtRegRewriter:\n {}", module);
         let mut rewriter = VirtRegRewriter::new(&[
             Register::R0,
             Register::R1,
@@ -45,7 +44,7 @@ impl Compiler {
 
         let module = rewriter.rewrite(module);
 
-        println!("after VirtRegRewriter: {:?}", module);
+        debug!("after VirtRegRewriter:\n {}", module);
 
         Ok(module)
     }

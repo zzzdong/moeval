@@ -45,7 +45,7 @@ pub enum Value {
     Char(char),
     String(Arc<String>),
     Array(Vec<Value>),
-    Dictionary(HashMap<String, Value>),
+    Dictionary(HashMap<Arc<String>, Value>),
     Dynamic(Arc<dyn Object>),
 }
 
@@ -170,15 +170,15 @@ impl std::ops::Add for Value {
 
 pub trait Object: fmt::Display + fmt::Debug + Any + Sync + Send {
     fn get_field(&self, _name: &str) -> Result<Option<Value>, Error> {
-        Err(Error::OpUnimplemented)
+        Err(Error::OpIllegalOperate)
     }
     fn set_field(&self, _name: &str, _value: Value) -> Result<(), Error> {
-        Err(Error::OpUnimplemented)
+        Err(Error::OpIllegalOperate)
     }
     fn call(&self, _args: &[Value]) -> Result<Option<Value>, Error> {
-        Err(Error::OpUnimplemented)
+        Err(Error::OpIllegalOperate)
     }
     fn call_method(&self, _name: &str, _args: &[Value]) -> Result<Option<Value>, Error> {
-        Err(Error::OpUnimplemented)
+        Err(Error::OpIllegalOperate)
     }
 }
