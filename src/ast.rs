@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::tokenizer::{Identifier, Literal};
+use crate::lexer::{Identifier, Literal, Symbol};
 
 #[derive(Debug)]
 pub enum Expression {
@@ -198,6 +198,54 @@ impl fmt::Display for BinaryOperation {
     }
 }
 
+impl TryFrom<Symbol> for BinaryOperation {
+    type Error = crate::Error;
+
+    fn try_from(symbol: Symbol) -> Result<BinaryOperation, Self::Error> {
+        match symbol {
+            Symbol::Plus => Ok(BinaryOperation::Addition),
+            Symbol::Minus => Ok(BinaryOperation::Subtraction),
+            Symbol::Star => Ok(BinaryOperation::Multiplication),
+            Symbol::Slash => Ok(BinaryOperation::Division),
+            Symbol::Percent => Ok(BinaryOperation::Modulus),
+            Symbol::Caret => Ok(BinaryOperation::Power),
+            Symbol::AndAnd => Ok(BinaryOperation::And),
+            Symbol::OrOr => Ok(BinaryOperation::Or),
+            Symbol::EqEq => Ok(BinaryOperation::Equal),
+            Symbol::NotEq => Ok(BinaryOperation::NotEqual),
+            Symbol::Lt => Ok(BinaryOperation::LessThan),
+            Symbol::Gt => Ok(BinaryOperation::GreaterThan),
+            Symbol::LtEq => Ok(BinaryOperation::LessThanOrEqual),
+            Symbol::GtEq => Ok(BinaryOperation::GreaterThanOrEqual),
+            Symbol::Dot => Ok(BinaryOperation::Member),
+            Symbol::Eq => Ok(BinaryOperation::Assign),
+            Symbol::EqTidle => Ok(BinaryOperation::Matches),
+
+            _ => Err(crate::Error::Message(format!(
+                "{:?} not a binary operator",
+                symbol
+            ))),
+        }
+    }
+}
+
+impl TryFrom<Symbol> for UnaryOperation {
+    type Error = crate::Error;
+
+    fn try_from(symbol: Symbol) -> Result<UnaryOperation, Self::Error> {
+        match symbol {
+            Symbol::Not => Ok(UnaryOperation::Not),
+            Symbol::Minus => Ok(UnaryOperation::Negation),
+            Symbol::Question => Ok(UnaryOperation::Try),
+
+            _ => Err(crate::Error::Message(format!(
+                "{:?} not a unary operator",
+                symbol
+            ))),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ArrayExpression {
     pub elements: Vec<Expression>,
@@ -206,11 +254,11 @@ pub struct ArrayExpression {
 impl fmt::Display for ArrayExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[")?;
-        if let Some((last, elements)) = self.elements.split_last() {
+        if let Some((first, elements)) = self.elements.split_first() {
+            write!(f, "{}", first)?;
             for item in elements {
-                write!(f, "{},", item)?;
+                write!(f, ", {}", item)?;
             }
-            write!(f, "{}", last)?;
         }
         write!(f, "]")
     }
@@ -224,11 +272,11 @@ pub struct DictionaryExpression {
 impl fmt::Display for DictionaryExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{")?;
-        if let Some((last, elements)) = self.elements.split_last() {
+        if let Some((first, elements)) = self.elements.split_first() {
+            write!(f, "{}: {}", first.key, first.value)?;
             for item in elements {
-                write!(f, "{}: {},", item.key, item.value)?;
+                write!(f, ", {}: {},", item.key, item.value)?;
             }
-            write!(f, "{}: {}", last.key, last.value)?;
         }
 
         write!(f, "}}")

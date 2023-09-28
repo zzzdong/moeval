@@ -11,6 +11,7 @@ pub enum Error {
     UndefinedVariable(Arc<String>),
     IndexOutOfBounds(usize, usize),
     EntryNotFound(Arc<String>),
+    Message(String),
 }
 
 impl std::fmt::Display for Error {
@@ -23,6 +24,7 @@ impl std::fmt::Display for Error {
             Error::UndefinedVariable(v) => write!(f, "Undefined variable: {}", v),
             Error::IndexOutOfBounds(i, l) => write!(f, "Index out of bounds: {} of {}", i, l),
             Error::EntryNotFound(v) => write!(f, "Entry not found: {}", v),
+            Error::Message(m) => write!(f, "{}", m),
         }
     }
 }

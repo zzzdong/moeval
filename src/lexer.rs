@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{borrow::Cow, ops::Deref, str::Chars};
+use std::{borrow::Cow, ops::Deref, str::{Chars, CharIndices}};
 
 use crate::ast::{BinaryOperation, LiteralExpression, UnaryOperation};
 
@@ -58,8 +58,8 @@ pub struct Identifier {
 pub enum Literal {
     Integer(i64),
     Float(f64),
-    String(String),
     Char(char),
+    String(String),
 }
 
 macro_rules! define_symbols {
@@ -161,48 +161,6 @@ define_symbols! {
     // DQuotes    => "\"",
 }
 
-impl TryInto<BinaryOperation> for Symbol {
-    type Error = TokenError;
-
-    fn try_into(self) -> Result<BinaryOperation, Self::Error> {
-        match self {
-            Symbol::Plus => Ok(BinaryOperation::Addition),
-            Symbol::Minus => Ok(BinaryOperation::Subtraction),
-            Symbol::Star => Ok(BinaryOperation::Multiplication),
-            Symbol::Slash => Ok(BinaryOperation::Division),
-            Symbol::Percent => Ok(BinaryOperation::Modulus),
-            Symbol::Caret => Ok(BinaryOperation::Power),
-            Symbol::AndAnd => Ok(BinaryOperation::And),
-            Symbol::OrOr => Ok(BinaryOperation::Or),
-            Symbol::EqEq => Ok(BinaryOperation::Equal),
-            Symbol::NotEq => Ok(BinaryOperation::NotEqual),
-            Symbol::Lt => Ok(BinaryOperation::LessThan),
-            Symbol::Gt => Ok(BinaryOperation::GreaterThan),
-            Symbol::LtEq => Ok(BinaryOperation::LessThanOrEqual),
-            Symbol::GtEq => Ok(BinaryOperation::GreaterThanOrEqual),
-            Symbol::Dot => Ok(BinaryOperation::Member),
-            Symbol::Eq => Ok(BinaryOperation::Assign),
-            Symbol::EqTidle => Ok(BinaryOperation::Matches),
-
-            _ => Err(TokenError::new(format!("{:?} not a binary operator", self))),
-        }
-    }
-}
-
-impl TryInto<UnaryOperation> for Symbol {
-    type Error = TokenError;
-
-    fn try_into(self) -> Result<UnaryOperation, Self::Error> {
-        match self {
-            Symbol::Not => Ok(UnaryOperation::Not),
-            Symbol::Minus => Ok(UnaryOperation::Negation),
-            Symbol::Question => Ok(UnaryOperation::Try),
-
-            _ => Err(TokenError::new(format!("{:?} not a unary operator", self))),
-        }
-    }
-}
-
 macro_rules! define_keywords {
     (
         $(
@@ -288,22 +246,22 @@ impl TryInto<LiteralExpression> for Keyword {
 }
 
 #[derive(Debug, Clone)]
-struct Tokenizer<'i> {
+struct Lexer<'i> {
     input: &'i str,
-    chars: Chars<'i>,
+    chars: CharIndices<'i>,
     pos: usize,
 }
 
-impl<'i> Tokenizer<'i> {
+impl<'i> Lexer<'i> {
     pub fn new(input: &'i str) -> Self {
         Self {
             input,
-            chars: input.chars(),
+            chars: input.char_indices(),
             pos: 0,
         }
     }
 
-    fn next(&mut self) -> Result<Pair<'i>, TokenError> {
+    fn next(&mut self) -> Result<SpannedToken<'i>, TokenError> {
         if let Some(c) = self.peek_char() {
             match c {
                 '"' => return self.eat_string(),
@@ -313,15 +271,15 @@ impl<'i> Tokenizer<'i> {
                 _c => {
                     if Symbol::STRS.contains(&self.peek_nchar(3)) {
                         let symbol = Symbol::from_str(self.take_nchar(3)).expect("Invalid symbol");
-                        return Ok(Pair::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
                     }
                     if Symbol::STRS.contains(&self.peek_nchar(2)) {
                         let symbol = Symbol::from_str(self.take_nchar(2)).expect("Invalid symbol");
-                        return Ok(Pair::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
                     }
                     if Symbol::STRS.contains(&self.peek_nchar(1)) {
                         let symbol = Symbol::from_str(self.take_nchar(1)).expect("Invalid symbol");
-                        return Ok(Pair::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
                     }
 
                     return Err(TokenError::new("invalid char"));
@@ -329,19 +287,19 @@ impl<'i> Tokenizer<'i> {
             }
         }
 
-        Ok(Pair::new(Token::Eof, self.new_span(self.pos)))
+        Ok(SpannedToken::new(Token::Eof, self.new_span(self.pos)))
     }
 
-    fn eat_whitespace(&mut self) -> Result<Pair<'i>, TokenError> {
+    fn eat_whitespace(&mut self) -> Result<SpannedToken<'i>, TokenError> {
         let start = self.pos;
         let _ws = self.eat_while(|c| c.is_whitespace());
-        Ok(Pair::new(
+        Ok(SpannedToken::new(
             Token::Whitespace,
             Span::new(self.input, start, self.pos),
         ))
     }
 
-    fn eat_number(&mut self) -> Result<Pair<'i>, TokenError> {
+    fn eat_number(&mut self) -> Result<SpannedToken<'i>, TokenError> {
         let start = self.pos;
 
         let _i = self.eat_integer();
@@ -356,7 +314,7 @@ impl<'i> Tokenizer<'i> {
                 .sub_str(start)
                 .parse::<f64>()
                 .map_err(|err| TokenError::new("invalid float").with_source(err))?;
-            return Ok(Pair::new(
+            return Ok(SpannedToken::new(
                 Token::Literal(Literal::Float(f)),
                 self.new_span(start),
             ));
@@ -367,7 +325,7 @@ impl<'i> Tokenizer<'i> {
             .parse::<i64>()
             .map_err(|err| TokenError::new("invalid integer").with_source(err))?;
 
-        return Ok(Pair::new(
+        return Ok(SpannedToken::new(
             Token::Literal(Literal::Integer(i)),
             self.new_span(start),
         ));
@@ -377,11 +335,11 @@ impl<'i> Tokenizer<'i> {
         self.eat_while(|c| c.is_ascii_digit())
     }
 
-    fn eat_string(&mut self) -> Result<Pair<'i>, TokenError> {
+    fn eat_string(&mut self) -> Result<SpannedToken<'i>, TokenError> {
         let start = self.pos;
         self.next_char();
         let s = self.eat_qouted('"')?;
-        Ok(Pair::new(
+        Ok(SpannedToken::new(
             Token::Literal(Literal::String(s)),
             self.new_span(start),
         ))
@@ -429,15 +387,15 @@ impl<'i> Tokenizer<'i> {
         Ok(ret)
     }
 
-    fn eat_identifier(&mut self) -> Result<Pair<'i>, TokenError> {
+    fn eat_identifier(&mut self) -> Result<SpannedToken<'i>, TokenError> {
         let start = self.pos;
         let s = self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
 
         if let Ok(kw) = Keyword::from_str(s) {
-            return Ok(Pair::new(Token::Keyword(kw), self.new_span(start)));
+            return Ok(SpannedToken::new(Token::Keyword(kw), self.new_span(start)));
         }
 
-        Ok(Pair::new(
+        Ok(SpannedToken::new(
             Token::Identifier(Identifier {
                 name: s.to_string(),
             }),
@@ -446,19 +404,19 @@ impl<'i> Tokenizer<'i> {
     }
 
     fn peek_char(&self) -> Option<char> {
-        self.chars.clone().next()
+        self.chars.clone().next().map(|(_i, c)|c)
     }
 
     fn next_char(&mut self) -> Option<char> {
-        self.chars.next().map(|c| {
-            self.pos += c.len_utf8();
+        self.chars.next().map(|(i, c)| {
+            self.pos = i;
             c
         })
     }
 
     fn peek_nchar(&mut self, n: usize) -> &'i str {
         let start = self.pos;
-        let sub = self.chars.clone().take(n).collect::<String>();
+        let sub = self.chars.clone().take(n).map(|(_i, c)| c).collect::<String>();
         &self.input[start..start + sub.len()]
     }
 
@@ -518,18 +476,18 @@ impl TokenError {
 }
 
 #[derive(Debug, Clone)]
-pub struct Pair<'i> {
+pub struct SpannedToken<'i> {
     pub(crate) token: Token,
     pub(crate) span: Span<'i>,
 }
 
-impl<'i> Pair<'i> {
+impl<'i> SpannedToken<'i> {
     pub fn new(token: Token, span: Span<'i>) -> Self {
         Self { token, span }
     }
 }
 
-impl<'i> Deref for Pair<'i> {
+impl<'i> Deref for SpannedToken<'i> {
     type Target = Token;
 
     fn deref(&self) -> &Self::Target {
@@ -558,36 +516,30 @@ impl fmt::Debug for Span<'_> {
     }
 }
 
-impl<'i> IntoIterator for Tokenizer<'i> {
-    type Item = Result<Pair<'i>, TokenError>;
-    type IntoIter = Pairs<'i>;
+impl<'i> IntoIterator for Lexer<'i> {
+    type Item = Result<SpannedToken<'i>, TokenError>;
+    type IntoIter = Tokens<'i>;
 
     fn into_iter(self) -> Self::IntoIter {
-        Pairs { inner: self }
+        Tokens { inner: self }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Pairs<'i> {
-    inner: Tokenizer<'i>,
+pub struct Tokens<'i> {
+    inner: Lexer<'i>,
 }
 
-impl<'i> Pairs<'i> {
+impl<'i> Tokens<'i> {
     pub fn new(input: &'i str) -> Self {
         Self {
-            inner: Tokenizer::new(input),
-        }
-    }
-
-    pub fn as_tokens(&self) -> Tokens {
-        Tokens {
-            inner: self.inner.clone(),
+            inner: Lexer::new(input),
         }
     }
 }
 
-impl<'i> Iterator for Pairs<'i> {
-    type Item = Result<Pair<'i>, TokenError>;
+impl<'i> Iterator for Tokens<'i> {
+    type Item = Result<SpannedToken<'i>, TokenError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
@@ -605,37 +557,37 @@ impl<'i> Iterator for Pairs<'i> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Tokens<'i> {
-    inner: Tokenizer<'i>,
-}
+// #[derive(Debug, Clone)]
+// pub struct Tokens<'i> {
+//     inner: Lexer<'i>,
+// }
 
-impl<'i> Tokens<'i> {
-    pub fn new(input: &'i str) -> Self {
-        Self {
-            inner: Tokenizer::new(input),
-        }
-    }
-}
+// impl<'i> Tokens<'i> {
+//     pub fn new(input: &'i str) -> Self {
+//         Self {
+//             inner: Lexer::new(input),
+//         }
+//     }
+// }
 
-impl<'i> Iterator for Tokens<'i> {
-    type Item = Result<Token, TokenError>;
+// impl<'i> Iterator for Tokens<'i> {
+//     type Item = Result<Token, TokenError>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.next() {
-            Ok(pair) => {
-                if pair.token == Token::Eof {
-                    None
-                } else if pair.token == Token::Whitespace {
-                    self.next()
-                } else {
-                    Some(Ok(pair.token))
-                }
-            }
-            Err(err) => Some(Err(err)),
-        }
-    }
-}
+//     fn next(&mut self) -> Option<Self::Item> {
+//         match self.inner.next() {
+//             Ok(pair) => {
+//                 if pair.token == Token::Eof {
+//                     None
+//                 } else if pair.token == Token::Whitespace {
+//                     self.next()
+//                 } else {
+//                     Some(Ok(pair.token))
+//                 }
+//             }
+//             Err(err) => Some(Err(err)),
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod test {
@@ -682,7 +634,7 @@ mod test {
         ];
 
         for i in &inputs {
-            let mut tokenizer = Tokenizer::new(i.0);
+            let mut tokenizer = Lexer::new(i.0);
 
             let mut ret = Vec::new();
 

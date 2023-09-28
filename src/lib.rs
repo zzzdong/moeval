@@ -4,7 +4,7 @@ mod error;
 mod instruction;
 mod interpreter;
 mod parser;
-mod tokenizer;
+mod lexer;
 mod value;
 mod vm;
 

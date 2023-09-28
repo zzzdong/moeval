@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use log::debug;
 
 use crate::ast::*;
-use crate::tokenizer::*;
+use crate::lexer::*;
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -24,7 +24,7 @@ impl ParseError {
         )))
     }
 
-    pub(crate) fn unexpect(expected: impl std::fmt::Display, found: &Pair<'_>) -> Self {
+    pub(crate) fn unexpect(expected: impl std::fmt::Display, found: &SpannedToken<'_>) -> Self {
         let span = &found.span;
         let tok = &found.token;
 
@@ -51,13 +51,13 @@ impl From<TokenError> for ParseError {
 }
 
 pub struct Parser<'i> {
-    pairs: Pairs<'i>,
+    tokens: Tokens<'i>,
 }
 
 impl<'i> Parser<'i> {
     pub fn parse(input: &'i str) -> Result<Expression, ParseError> {
-        let pairs = Pairs::new(input);
-        let mut parser = Parser { pairs };
+        let tokens = Tokens::new(input);
+        let mut parser = Parser { tokens };
         parser.parse_expr()
     }
 
@@ -353,8 +353,8 @@ impl<'i> Parser<'i> {
     // }
 
     /// Consume and return the next token
-    fn consume_token(&mut self) -> Result<Pair<'_>, ParseError> {
-        match self.pairs.next() {
+    fn consume_token(&mut self) -> Result<SpannedToken<'_>, ParseError> {
+        match self.tokens.next() {
             Some(Ok(tok)) => Ok(tok),
             Some(Err(err)) => Err(err.into()),
             None => Err(ParseError::eof()),
@@ -372,8 +372,8 @@ impl<'i> Parser<'i> {
     }
 
     /// Peek next token without cunsume it
-    fn peek_token(&self) -> Result<Option<Pair>, ParseError> {
-        match self.pairs.clone().next() {
+    fn peek_token(&self) -> Result<Option<SpannedToken>, ParseError> {
+        match self.tokens.clone().next() {
             Some(Ok(pair)) => Ok(Some(pair)),
             Some(Err(err)) => Err(err.into()),
             None => Ok(None),
@@ -399,7 +399,7 @@ impl<'i> Parser<'i> {
     }
 
     fn is_eof(&self) -> bool {
-        self.pairs.clone().next().is_none()
+        self.tokens.clone().next().is_none()
     }
 }
 
