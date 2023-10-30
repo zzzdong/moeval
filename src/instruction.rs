@@ -5,7 +5,7 @@ use crate::{
     value::Primitive,
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Opcode {
     LoadEnv,
     LoadMember,
@@ -55,7 +55,6 @@ impl TryFrom<BinaryOperation> for Opcode {
             BinaryOperation::Power => Opcode::Pow,
             BinaryOperation::And => Opcode::And,
             BinaryOperation::Or => Opcode::Or,
-            BinaryOperation::Member => Opcode::LoadMember,
             BinaryOperation::In => Opcode::In,
             BinaryOperation::Matches => Opcode::Matches,
             BinaryOperation::Equal => Opcode::IfEqual,
@@ -64,6 +63,7 @@ impl TryFrom<BinaryOperation> for Opcode {
             BinaryOperation::GreaterThanOrEqual => Opcode::IfGreaterOrEqual,
             BinaryOperation::LessThan => Opcode::IfLess,
             BinaryOperation::LessThanOrEqual => Opcode::IfLessOrEqual,
+            BinaryOperation::Dot => Opcode::Call,
             _ => {
                 return Err(());
             }
@@ -103,317 +103,6 @@ impl fmt::Display for Operand {
             Operand::VirtReg(vreg) => write!(f, "{}", vreg),
             Operand::Stack(s) => write!(f, "{}", s),
             Operand::None => write!(f, ""),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum InstructionData {
-    LoadEnv {
-        opcode: Opcode,
-        dest: Operand,
-        env_var: String,
-    },
-    LoadMember {
-        opcode: Opcode,
-        dest: Operand,
-        object: Operand,
-        member: String,
-    },
-    Load {
-        opcode: Opcode,
-        dest: Operand,
-        source: Operand,
-    },
-    Store {
-        opcode: Opcode,
-        source: Operand,
-        dest: Operand,
-    },
-    AllocStack {
-        opcode: Opcode,
-        size: usize,
-    },
-    Push {
-        opcode: Opcode,
-        value: Operand,
-    },
-    Pop {
-        opcode: Opcode,
-        dest: Operand,
-    },
-    Move {
-        opcode: Opcode,
-        dest: Operand,
-        src: Operand,
-    },
-    Unary {
-        opcode: Opcode,
-        dest: Operand,
-        src: Operand,
-    },
-    Binary {
-        opcode: Opcode,
-        dest: Operand,
-        lhs: Operand,
-        rhs: Operand,
-    },
-    Call {
-        opcode: Opcode,
-        dest: Operand,
-        func: Operand,
-    },
-    Return {
-        opcode: Opcode,
-        ret: Operand,
-    },
-    NewArray {
-        opcode: Opcode,
-        dest: Operand,
-    },
-    ArrayPush {
-        opcode: Opcode,
-        array: Operand,
-        element: Operand,
-    },
-    NewDictionary {
-        opcode: Opcode,
-        dest: Operand,
-    },
-    DictionaryPut {
-        opcode: Opcode,
-        dict: Operand,
-        key: Operand,
-        value: Operand,
-    },
-    Index {
-        opcode: Opcode,
-        dest: Operand,
-        object: Operand,
-        index: Operand,
-    },
-}
-
-impl InstructionData {
-    pub fn load_env(dest: Operand, env_var: &str) -> Self {
-        InstructionData::LoadEnv {
-            opcode: Opcode::LoadEnv,
-            dest,
-            env_var: env_var.to_string(),
-        }
-    }
-
-    pub fn load_member(dest: Operand, object: Operand, member: &str) -> Self {
-        InstructionData::LoadMember {
-            opcode: Opcode::LoadMember,
-            dest,
-            object,
-            member: member.to_string(),
-        }
-    }
-    pub fn load(dest: Operand, source: Operand) -> Self {
-        InstructionData::Load {
-            opcode: Opcode::Load,
-            dest,
-            source,
-        }
-    }
-
-    pub fn store(source: Operand, dest: Operand) -> Self {
-        InstructionData::Store {
-            opcode: Opcode::Store,
-            source,
-            dest,
-        }
-    }
-
-    pub fn push(value: Operand) -> Self {
-        InstructionData::Push {
-            opcode: Opcode::Push,
-            value,
-        }
-    }
-
-    pub fn pop(dest: Operand) -> Self {
-        InstructionData::Pop {
-            opcode: Opcode::Pop,
-            dest,
-        }
-    }
-
-    pub fn move_(dest: Operand, src: Operand) -> Self {
-        InstructionData::Move {
-            opcode: Opcode::Move,
-            dest,
-            src,
-        }
-    }
-
-    pub fn unary(opcode: Opcode, dest: Operand, src: Operand) -> Self {
-        InstructionData::Unary { opcode, dest, src }
-    }
-
-    pub fn binary(opcode: Opcode, dest: Operand, lhs: Operand, rhs: Operand) -> Self {
-        InstructionData::Binary {
-            opcode,
-            dest,
-            lhs,
-            rhs,
-        }
-    }
-
-    pub fn call(dest: Operand, func: Operand) -> Self {
-        InstructionData::Call {
-            opcode: Opcode::Call,
-            dest,
-            func,
-        }
-    }
-
-    pub fn return_(ret: Operand) -> Self {
-        InstructionData::Return {
-            opcode: Opcode::Return,
-            ret,
-        }
-    }
-
-    pub fn new_array(dest: Operand) -> Self {
-        InstructionData::NewArray {
-            opcode: Opcode::NewArray,
-            dest,
-        }
-    }
-
-    pub fn array_push(array: Operand, element: Operand) -> Self {
-        InstructionData::ArrayPush {
-            opcode: Opcode::ArrayPush,
-            array,
-            element,
-        }
-    }
-
-    pub fn new_dict(dest: Operand) -> Self {
-        InstructionData::NewDictionary {
-            opcode: Opcode::NewDictionary,
-            dest,
-        }
-    }
-    pub fn dict_put(dict: Operand, key: Operand, value: Operand) -> Self {
-        InstructionData::DictionaryPut {
-            opcode: Opcode::DictionaryPut,
-            dict,
-            key,
-            value,
-        }
-    }
-
-    pub fn index(dest: Operand, object: Operand, index: Operand) -> Self {
-        InstructionData::Index {
-            opcode: Opcode::Index,
-            dest,
-            object,
-            index,
-        }
-    }
-
-    pub(crate) fn alloc_stack(size: usize) -> InstructionData {
-        InstructionData::AllocStack {
-            opcode: Opcode::StackAlloc,
-            size,
-        }
-    }
-}
-
-impl fmt::Display for InstructionData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InstructionData::LoadEnv {
-                opcode,
-                dest,
-                env_var,
-            } => {
-                write!(f, "{:?} {} {}", opcode, dest, env_var)
-            }
-            InstructionData::LoadMember {
-                opcode,
-                dest,
-                object: source,
-                member,
-            } => {
-                write!(f, "{:?} {} {} {}", opcode, dest, source, member)
-            }
-            InstructionData::Load {
-                opcode,
-                dest,
-                source,
-            } => {
-                write!(f, "{:?} {} {}", opcode, dest, source)
-            }
-            InstructionData::Store {
-                opcode,
-                source,
-                dest,
-            } => {
-                write!(f, "{:?} {} {}", opcode, source, dest)
-            }
-            InstructionData::Unary { opcode, dest, src } => {
-                write!(f, "{:?} {} {}", opcode, dest, src)
-            }
-            InstructionData::Binary {
-                opcode,
-                dest,
-                lhs,
-                rhs,
-            } => {
-                write!(f, "{:?} {} {} {}", opcode, dest, lhs, rhs)
-            }
-            InstructionData::Push { opcode, value } => {
-                write!(f, "{:?} {}", opcode, value)
-            }
-            InstructionData::Pop { opcode, dest } => {
-                write!(f, "{:?} {}", opcode, dest)
-            }
-            InstructionData::Move { opcode, dest, src } => {
-                write!(f, "{:?} {} {}", opcode, dest, src)
-            }
-            InstructionData::Call { opcode, dest, func } => {
-                write!(f, "{:?} {} {}", opcode, dest, func)
-            }
-            InstructionData::Return { opcode, ret } => {
-                write!(f, "{:?} {}", opcode, ret)
-            }
-            InstructionData::NewArray { opcode, dest } => {
-                write!(f, "{:?} {}", opcode, dest)
-            }
-            InstructionData::NewDictionary { opcode, dest } => {
-                write!(f, "{:?} {}", opcode, dest)
-            }
-            InstructionData::ArrayPush {
-                opcode,
-                array,
-                element,
-            } => {
-                write!(f, "{:?} {} {}", opcode, array, element)
-            }
-            InstructionData::DictionaryPut {
-                opcode,
-                dict,
-                key,
-                value,
-            } => {
-                write!(f, "{:?} {} {} {}", opcode, dict, key, value)
-            }
-            InstructionData::Index {
-                opcode,
-                dest,
-                object,
-                index,
-            } => {
-                write!(f, "{:?} {} {} {}", opcode, dest, object, index)
-            }
-            InstructionData::AllocStack { opcode, size } => {
-                write!(f, "{:?} {}", opcode, size)
-            }
         }
     }
 }
@@ -631,3 +320,11 @@ impl fmt::Display for StackSlot {
         write!(f, "rbp+{}", self.offset)
     }
 }
+
+pub enum Value {
+    Immed(Primitive),
+    Env(usize),
+    Const(usize),
+}
+
+pub struct ValueId(usize);

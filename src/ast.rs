@@ -1,10 +1,11 @@
 use std::fmt;
 
-use crate::lexer::{Identifier, Literal, Symbol};
+use crate::lexer::{Identifier, Literal, Symbol, Variable};
 
 #[derive(Debug)]
 pub enum Expression {
     Identifier(IdentifierExpression),
+    Variable(VariableExpression),
     Literal(LiteralExpression),
     Grouped(GroupedExpression),
     UnaryOperation(UnaryOperationExpression),
@@ -23,6 +24,7 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Expression::Identifier(identifier) => write!(f, "{}", identifier),
+            Expression::Variable(variable) => write!(f, "{}", variable),
             Expression::Literal(literal) => write!(f, "{}", literal),
             Expression::Grouped(grouped) => write!(f, "{}", grouped),
             Expression::UnaryOperation(unary) => write!(f, "{}", unary),
@@ -59,6 +61,25 @@ impl fmt::Display for IdentifierExpression {
 }
 
 #[derive(Debug)]
+pub struct VariableExpression {
+    pub name: String,
+}
+
+impl From<Variable> for VariableExpression {
+    fn from(variable: Variable) -> Self {
+        VariableExpression {
+            name: variable.name,
+        }
+    }
+}
+
+impl fmt::Display for VariableExpression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "${}", self.name)
+    }
+}
+
+#[derive(Debug)]
 pub enum LiteralExpression {
     Char(char),
     String(String),
@@ -66,6 +87,7 @@ pub enum LiteralExpression {
     Float(f64),
     Boolean(bool),
     Null,
+    Undefined,
 }
 
 impl fmt::Display for LiteralExpression {
@@ -77,6 +99,7 @@ impl fmt::Display for LiteralExpression {
             LiteralExpression::Float(ff) => write!(f, "{}", ff),
             LiteralExpression::Boolean(b) => write!(f, "{}", b),
             LiteralExpression::Null => write!(f, "null"),
+            LiteralExpression::Undefined => write!(f, "undefined"),
         }
     }
 }
@@ -147,7 +170,7 @@ impl fmt::Display for BinaryOperationExpression {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinaryOperation {
     Addition,
     Subtraction,
@@ -163,7 +186,7 @@ pub enum BinaryOperation {
     LessThanOrEqual,
     And,
     Or,
-    Member,
+    Dot,
     In,
     Matches,
     As,
@@ -188,7 +211,7 @@ impl fmt::Display for BinaryOperation {
             BinaryOperation::LessThanOrEqual => write!(f, "<="),
             BinaryOperation::And => write!(f, "&&"),
             BinaryOperation::Or => write!(f, "||"),
-            BinaryOperation::Member => write!(f, "."),
+            BinaryOperation::Dot => write!(f, "."),
             BinaryOperation::Matches => write!(f, "=~"),
             BinaryOperation::In => write!(f, "in"),
             BinaryOperation::As => write!(f, "as"),
@@ -217,7 +240,7 @@ impl TryFrom<Symbol> for BinaryOperation {
             Symbol::Gt => Ok(BinaryOperation::GreaterThan),
             Symbol::LtEq => Ok(BinaryOperation::LessThanOrEqual),
             Symbol::GtEq => Ok(BinaryOperation::GreaterThanOrEqual),
-            Symbol::Dot => Ok(BinaryOperation::Member),
+            Symbol::Dot => Ok(BinaryOperation::Dot),
             Symbol::Eq => Ok(BinaryOperation::Assign),
             Symbol::EqTidle => Ok(BinaryOperation::Matches),
 

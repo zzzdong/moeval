@@ -3,8 +3,8 @@ mod compiler;
 mod error;
 mod instruction;
 mod interpreter;
-mod parser;
 mod lexer;
+mod parser;
 mod value;
 mod vm;
 

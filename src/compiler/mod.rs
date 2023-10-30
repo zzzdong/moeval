@@ -1,5 +1,6 @@
 mod exprrewriter;
 mod irbuilder;
+mod irbuilder2;
 mod virtregrewriter;
 
 use crate::{

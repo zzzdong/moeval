@@ -1,12 +1,13 @@
 use core::fmt;
-use std::{borrow::Cow, ops::Deref, str::{Chars, CharIndices}};
+use std::{borrow::Cow, ops::Deref, str::CharIndices};
 
-use crate::ast::{BinaryOperation, LiteralExpression, UnaryOperation};
+use crate::ast::{BinaryOperation, LiteralExpression};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Keyword(Keyword),
     Identifier(Identifier),
+    Variable(Variable),
     Literal(Literal),
     Symbol(Symbol),
     Whitespace,
@@ -41,6 +42,7 @@ impl fmt::Display for Token {
         match self {
             Token::Keyword(kw) => write!(f, "Keyword({:?})", kw),
             Token::Identifier(ident) => write!(f, "Identifier({})", ident.name),
+            Token::Variable(var) => write!(f, "Variable({:?})", var),
             Token::Literal(lit) => write!(f, "Literal({:?})", lit),
             Token::Symbol(sym) => write!(f, "Symbol{:?}", sym.as_str()),
             Token::Whitespace => write!(f, "Whitespace"),
@@ -51,6 +53,11 @@ impl fmt::Display for Token {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier {
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Variable {
     pub(crate) name: String,
 }
 
@@ -209,6 +216,7 @@ define_keywords! {
     String => "string",
     Bool => "bool",
     Null => "null",
+    Undefined => "undefined",
     True => "true",
     False => "false",
     In => "in",
@@ -237,6 +245,7 @@ impl TryInto<LiteralExpression> for Keyword {
             Keyword::True => Ok(LiteralExpression::Boolean(true)),
             Keyword::False => Ok(LiteralExpression::Boolean(false)),
             Keyword::Null => Ok(LiteralExpression::Null),
+            Keyword::Undefined => Ok(LiteralExpression::Undefined),
             _ => Err(TokenError::new(format!(
                 "{:?} not a literal expression",
                 self
@@ -249,40 +258,87 @@ impl TryInto<LiteralExpression> for Keyword {
 struct Lexer<'i> {
     input: &'i str,
     chars: CharIndices<'i>,
+    look_ahead: Option<char>,
     pos: usize,
 }
 
+// reference:
 impl<'i> Lexer<'i> {
     pub fn new(input: &'i str) -> Self {
-        Self {
+        let mut lexer = Self {
             input,
             chars: input.char_indices(),
+            look_ahead: None,
             pos: 0,
+        };
+
+        // Advance to first char.
+        lexer.next_char();
+        lexer
+    }
+
+    /// Advance to the next chararter.
+    /// Return the next lookahead chararter, or None when when reach end.
+    fn next_char(&mut self) -> Option<char> {
+        match self.chars.next() {
+            Some((idx, c)) => {
+                self.pos = idx;
+                self.look_ahead = Some(c);
+            }
+            None => self.look_ahead = None,
+        }
+        self.look_ahead
+    }
+
+    fn eat_char(&mut self, expected: char) -> Result<(), TokenError> {
+        match self.look_ahead {
+            Some(c) => {
+                if c == expected {
+                    self.next_char();
+                    Ok(())
+                } else {
+                    Err(
+                        TokenError::new(format!("expect {expected:?}, but found {c:?}"))
+                            .with_position(self.pos),
+                    )
+                }
+            }
+            None => Err(TokenError::unexpected_eof(self.pos)),
         }
     }
 
     fn next(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        if let Some(c) = self.peek_char() {
+        if let Some(c) = self.look_ahead {
             match c {
                 '"' => return self.eat_string(),
+                '$' => return self.eat_variable(),
                 c if c.is_whitespace() => return self.eat_whitespace(),
                 c if c.is_ascii_digit() => return self.eat_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => return self.eat_identifier(),
-                _c => {
+                c => {
                     if Symbol::STRS.contains(&self.peek_nchar(3)) {
                         let symbol = Symbol::from_str(self.take_nchar(3)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(
+                            Token::Symbol(symbol),
+                            self.new_span(self.pos),
+                        ));
                     }
                     if Symbol::STRS.contains(&self.peek_nchar(2)) {
                         let symbol = Symbol::from_str(self.take_nchar(2)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(
+                            Token::Symbol(symbol),
+                            self.new_span(self.pos),
+                        ));
                     }
                     if Symbol::STRS.contains(&self.peek_nchar(1)) {
                         let symbol = Symbol::from_str(self.take_nchar(1)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(Token::Symbol(symbol), self.new_span(self.pos)));
+                        return Ok(SpannedToken::new(
+                            Token::Symbol(symbol),
+                            self.new_span(self.pos),
+                        ));
                     }
 
-                    return Err(TokenError::new("invalid char"));
+                    return Err(TokenError::new(format!("invalid char({})", c)));
                 }
             }
         }
@@ -304,7 +360,7 @@ impl<'i> Lexer<'i> {
 
         let _i = self.eat_integer();
 
-        if self.peek_char() == Some('.') {
+        if self.look_ahead == Some('.') {
             self.next_char();
             let f = self.eat_integer();
             if f.is_empty() {
@@ -348,12 +404,13 @@ impl<'i> Lexer<'i> {
     fn eat_qouted(&mut self, qoute: char) -> Result<String, TokenError> {
         let mut ret = String::new();
 
-        while let Some(c) = self.next_char() {
-            match c {
-                c if c == qoute => {
+        loop {
+            match self.look_ahead {
+                Some(c) if c == qoute => {
+                    self.next_char();
                     return Ok(ret);
                 }
-                '\\' => {
+                Some('\\') => {
                     // unescape
                     match self.next_char() {
                         Some(c) => match c {
@@ -377,14 +434,16 @@ impl<'i> Lexer<'i> {
                         }
                     }
                 }
-
-                c => {
+                Some(c) => {
                     ret.push(c);
                 }
+                None => {
+                    return Err(TokenError::new("unexpected end of input"));
+                }
             }
-        }
 
-        Ok(ret)
+            self.next_char();
+        }
     }
 
     fn eat_identifier(&mut self) -> Result<SpannedToken<'i>, TokenError> {
@@ -403,20 +462,27 @@ impl<'i> Lexer<'i> {
         ))
     }
 
-    fn peek_char(&self) -> Option<char> {
-        self.chars.clone().next().map(|(_i, c)|c)
-    }
-
-    fn next_char(&mut self) -> Option<char> {
-        self.chars.next().map(|(i, c)| {
-            self.pos = i;
-            c
-        })
+    fn eat_variable(&mut self) -> Result<SpannedToken<'i>, TokenError> {
+        self.next_char();
+        let start = self.pos;
+        let s = self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
+        Ok(SpannedToken::new(
+            Token::Variable(Variable {
+                name: s.to_string(),
+            }),
+            self.new_span(start),
+        ))
     }
 
     fn peek_nchar(&mut self, n: usize) -> &'i str {
         let start = self.pos;
-        let sub = self.chars.clone().take(n).map(|(_i, c)| c).collect::<String>();
+        let sub = self
+            .chars
+            .clone()
+            .take(n)
+            .map(|(_i, c)| c)
+            .collect::<String>();
+
         &self.input[start..start + sub.len()]
     }
 
@@ -436,7 +502,7 @@ impl<'i> Lexer<'i> {
 
     fn eat_while(&mut self, predicate: impl Fn(char) -> bool) -> &'i str {
         let start = self.pos;
-        while let Some(c) = self.peek_char() {
+        while let Some(c) = self.look_ahead {
             if !predicate(c) {
                 break;
             }
@@ -459,6 +525,7 @@ impl<'i> Lexer<'i> {
 pub struct TokenError {
     pub(crate) detail: Option<Cow<'static, str>>,
     source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    position: usize,
 }
 
 impl TokenError {
@@ -466,12 +533,22 @@ impl TokenError {
         TokenError {
             detail: Some(detail.into()),
             source: None,
+            position: 0,
         }
     }
 
     pub fn with_source<E: std::error::Error + Send + Sync + 'static>(mut self, source: E) -> Self {
         self.source = Some(Box::new(source));
         self
+    }
+
+    pub fn with_position(mut self, position: usize) -> Self {
+        self.position = position;
+        self
+    }
+
+    pub fn unexpected_eof(position: usize) -> TokenError {
+        TokenError::new("unexcepted eof").with_position(position)
     }
 }
 

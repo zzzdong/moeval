@@ -71,7 +71,7 @@ impl IRBuilder {
             }
             Expression::BinaryOperation(BinaryOperationExpression { left, op, right }) => {
                 match op {
-                    BinaryOperation::Member => {
+                    BinaryOperation::Dot => {
                         let lhs = self.build_expr_inner(*left);
                         if let Expression::Identifier(IdentifierExpression { name }) = *right {
                             // load member
@@ -149,6 +149,7 @@ impl IRBuilder {
     fn create_literal_operand(&mut self, lit: LiteralExpression) -> Operand {
         match lit {
             LiteralExpression::Null => Operand::Immed(Primitive::Null),
+            LiteralExpression::Undefined => Operand::Immed(Primitive::Undefined),
             LiteralExpression::Boolean(b) => Operand::Immed(Primitive::Bool(b)),
             LiteralExpression::Integer(i) => Operand::Immed(Primitive::Integer(i)),
             LiteralExpression::Float(f) => Operand::Immed(Primitive::Float(f)),
@@ -184,7 +185,7 @@ mod test {
     #[test]
     fn test_irbuilder() {
         let inputs = vec![
-            r#"a + b * c + 100 - e + f % g / 2 + a#,
+            r#"a + b * c + 100 - e + f % g / 2 + a"#,
             r#"user.Role in admins || user.Id == comment.UserId"#,
             r#"user.Group in ["admin", "moderator"] || user.Id == comment.UserId"#,
         ];

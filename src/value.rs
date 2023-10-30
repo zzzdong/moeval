@@ -5,6 +5,7 @@ use crate::Error;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Primitive {
     Null,
+    Undefined,
     Bool(bool),
     Integer(i64),
     Float(f64),
@@ -16,6 +17,7 @@ impl fmt::Display for Primitive {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Primitive::Null => write!(f, "null"),
+            Primitive::Undefined => write!(f, "undefined"),
             Primitive::Bool(b) => write!(f, "{}", b),
             Primitive::Integer(i) => write!(f, "{}", i),
             Primitive::Float(ff) => write!(f, "{}", ff),
@@ -39,6 +41,7 @@ pub enum ValueKind {
 #[derive(Clone, Debug)]
 pub enum Value {
     Null,
+    Undefined,
     Bool(bool),
     Integer(i64),
     Float(f64),
@@ -53,6 +56,7 @@ impl From<Primitive> for Value {
     fn from(value: Primitive) -> Self {
         match value {
             Primitive::Null => Self::Null,
+            Primitive::Undefined => Self::Undefined,
             Primitive::Bool(value) => Self::Bool(value),
             Primitive::Integer(value) => Self::Integer(value),
             Primitive::Float(value) => Self::Float(value),

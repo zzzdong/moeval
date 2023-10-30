@@ -177,6 +177,10 @@ impl<'i> Parser<'i> {
                 self.consume_token()?;
                 Ok(Expression::Identifier(ident.into()))
             }
+            Token::Variable(var) => {
+                self.consume_token()?;
+                Ok(Expression::Variable(var.into()))
+            }
             Token::Literal(lit) => {
                 self.consume_token()?;
                 Ok(Expression::Literal(lit.into()))
