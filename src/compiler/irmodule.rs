@@ -71,7 +71,7 @@ impl IRModule {
     fn make_array(&mut self, elements: &[Value]) -> Value {
         let array = self.make_value(ValueData::Inst);
         let data = InstructionData::NewArray {
-            size: elements.len(),
+            size: self.make_constant(Primitive::Integer(elements.len() as i64)),
         };
         self.instructions.push(Instruction::new(data, Some(array)));
 
@@ -120,8 +120,9 @@ impl IRModule {
         Value::new(idx)
     }
 
-    fn make_variable(&mut self, name: String, value: Value) {
+    fn make_variable(&mut self, name: String, value: Value) -> Value{
         self.variables.insert(name, value);
+        value
     }
 
     fn lookup_variable(&mut self, name: &str) -> Option<Value> {
@@ -135,6 +136,81 @@ impl IRModule {
         };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
+    }
+
+    fn codegen(&self) -> Vec<String> {
+        let mut code = vec![];
+        for instruction in &self.instructions {
+            match &instruction.data {
+                InstructionData::Binary { op, lhs, rhs } => {
+                    code.push(format!(
+                        "{:?} {} {} {}",
+                        op,
+                        self.value_str(&instruction.result.unwrap()),
+                        self.value_str(lhs),
+                        self.value_str(rhs),
+                    ));
+                }
+                InstructionData::Unary { op, operand } => {
+                    code.push(format!(
+                        "{:?} {} {}",
+                        op,
+                        self.value_str(&instruction.result.unwrap()),
+                        self.value_str(operand)
+                    ));
+                }
+                InstructionData::LoadEnv { name } => {
+                    code.push(format!(
+                        "{:?} {} {}",
+                        Opcode::LoadEnv,
+                        self.value_str(&instruction.result.unwrap()),
+                        name
+                    ));
+                }
+                InstructionData::Call { func, args } => {
+                    unimplemented!()
+                }
+                InstructionData::Return { value } => {
+                    unimplemented!()
+                }
+                InstructionData::NewArray { size } => {
+                    code.push(format!(
+                        "{:?} {} {}",
+                        Opcode::NewArray,
+                        self.value_str(&instruction.result.unwrap()),
+                        self.value_str(size)
+                    ));
+                }
+                InstructionData::ArrayPush { array, element } => {
+                    code.push(format!("{:?} {} {}", Opcode::ArrayPush, self.value_str(array), self.value_str(element)));
+                }
+                InstructionData::NewDictionary => {
+                    code.push(format!(
+                        "{:?} {}",
+                        Opcode::NewDictionary,
+                        self.value_str(&instruction.result.unwrap())
+                    ));
+                }
+                InstructionData::DictionaryPut { object, key, value } => {
+                    code.push(format!(
+                        "{:?} {} {} {}",
+                        Opcode::DictionaryPut,
+                        self.value_str(object),
+                        self.value_str(key),
+                        self.value_str(value)
+                    ));
+                }
+            }
+        }
+
+        code
+    }
+
+    fn value_str(&self, value: &Value) -> String {
+        match self.values.get(value).unwrap() {
+            ValueData::Constant(constant) => format!("{}", constant),
+            ValueData::Inst => format!("v{}", value.0),
+        }
     }
 }
 
@@ -161,30 +237,18 @@ pub(crate) enum InstructionData {
         op: Opcode,
         operand: Value,
     },
-    Call {
-        func: Value,
-        args: Vec<Value>,
-    },
     LoadEnv {
         name: String,
     },
-    LoadVar {
-        name: String,
-    },
-    LoadConst {
-        value: Primitive,
-    },
-    StoreVar {
-        name: String,
-    },
-    StoreConst {
-        value: Primitive,
+    Call {
+        func: Value,
+        args: Vec<Value>,
     },
     Return {
         value: Value,
     },
     NewArray {
-        size: usize,
+        size: Value,
     },
     ArrayPush {
         array: Value,
@@ -245,7 +309,8 @@ impl IRBuilder {
                 if let Some(var) = self.module.lookup_variable(&name) {
                     return var;
                 }
-                self.module.make_constant(Primitive::String(Arc::new(name)))
+                let var = self.module.make_value(ValueData::Inst);
+                self.module.make_variable(name, var)
             }
             Expression::Array(ArrayExpression { elements }) => {
                 let mut array = Vec::new();
@@ -324,6 +389,12 @@ mod test {
             let module = IRBuilder::build_expr(expr);
 
             println!("{:?}", module.instructions);
+
+            for line in module.codegen() {
+                println!("{:?};", line);
+            }
+
+            
 
             println!("====",);
         }
