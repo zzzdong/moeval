@@ -24,12 +24,12 @@ impl ParseError {
         )))
     }
 
-    pub(crate) fn unexpect(expected: impl std::fmt::Display, found: &SpannedToken<'_>) -> Self {
-        let span = &found.span;
+    pub(crate) fn unexpect(expected: impl std::fmt::Display, found: &LocatedToken) -> Self {
+        let location = &found.location;
         let tok = &found.token;
 
         ParseError::Error(Cow::Owned(format!(
-            "expected {expected}, but found `{tok:?}` @ {span:?}",
+            "expected {expected}, but found `{tok:?}` @ {location:?}",
         )))
     }
 
@@ -124,7 +124,7 @@ impl<'i> Parser<'i> {
                     )?;
                     self.expect_token(Token::Symbol(Symbol::CloseParen))?;
                     Ok(Expression::Call(CallExpression {
-                        callee: Box::new(expr),
+                        func: Box::new(expr),
                         arguments: args,
                     }))
                 }
@@ -357,7 +357,7 @@ impl<'i> Parser<'i> {
     // }
 
     /// Consume and return the next token
-    fn consume_token(&mut self) -> Result<SpannedToken<'_>, ParseError> {
+    fn consume_token(&mut self) -> Result<LocatedToken, ParseError> {
         match self.tokens.next() {
             Some(Ok(tok)) => Ok(tok),
             Some(Err(err)) => Err(err.into()),
@@ -376,7 +376,7 @@ impl<'i> Parser<'i> {
     }
 
     /// Peek next token without cunsume it
-    fn peek_token(&self) -> Result<Option<SpannedToken>, ParseError> {
+    fn peek_token(&self) -> Result<Option<LocatedToken>, ParseError> {
         match self.tokens.clone().next() {
             Some(Ok(pair)) => Ok(Some(pair)),
             Some(Err(err)) => Err(err.into()),
@@ -447,6 +447,9 @@ mod test {
         init();
 
         info!("test_parse_expr");
+
+        let expr = Parser::parse("123 + 2 + 3").unwrap();
+        println!("{:?}", expr);
 
         let expr = Parser::parse("a + b * c - d").unwrap();
         println!("{:?}", expr);

@@ -332,13 +332,13 @@ impl fmt::Display for IndexExpression {
 
 #[derive(Debug)]
 pub struct CallExpression {
-    pub callee: Box<Expression>,
+    pub func: Box<Expression>,
     pub arguments: Vec<Expression>,
 }
 
 impl fmt::Display for CallExpression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}(", self.callee)?;
+        write!(f, "{}(", self.func)?;
         for arg in &self.arguments {
             write!(f, "{},", arg)?;
         }

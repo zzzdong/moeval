@@ -1,11 +1,12 @@
 mod exprrewriter;
 mod irbuilder;
-mod irbuilder2;
+pub(crate) mod irmodule;
 mod virtregrewriter;
 
 use crate::{
     compiler::{
-        exprrewriter::ExprRewriter, irbuilder::IRBuilder, virtregrewriter::VirtRegRewriter,
+        exprrewriter::ExprRewriter, irbuilder::IRBuilder, irmodule::IRModule,
+        virtregrewriter::VirtRegRewriter,
     },
     instruction::{Module, Register},
     parser::Parser,
@@ -51,6 +52,15 @@ impl Compiler {
 
         debug!("after VirtRegRewriter:\n {}", module);
 
+        Ok(module)
+    }
+
+    pub fn compile_ir(&self, source: &str) -> Result<IRModule, Error> {
+        let expr = Parser::parse(source)?;
+
+        debug!("expr:\n {:?}", expr);
+
+        let module = irmodule::IRBuilder::build_expr(expr);
         Ok(module)
     }
 }

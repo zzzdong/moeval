@@ -1,6 +1,8 @@
 use crate::{
     compiler::Compiler,
     error::Error,
+    eval::Eval,
+    parser::Parser,
     value::Value,
     vm::{Environment, Vm},
 };
@@ -14,16 +16,19 @@ impl Interpreter {
         Self { vm: Vm::new() }
     }
 
-    pub fn eval(source: &str, env: &Environment) -> Result<Value, Error> {
-        let mut interpreter = Interpreter::new();
-        interpreter.run(source, env)
-    }
-
     pub fn run(&mut self, source: &str, env: &Environment) -> Result<Value, Error> {
         let compiler = Compiler::new();
         let module = compiler.compile(source)?;
 
         self.vm.execute(module, env)
+    }
+
+    pub fn eval(source: &str, env: &Environment) -> Result<Value, Error> {
+        let expr = Parser::parse(source)?;
+
+        let mut eval = Eval::new(env);
+
+        eval.eval(expr)
     }
 }
 

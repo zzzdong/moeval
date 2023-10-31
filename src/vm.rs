@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
+    compiler::irmodule::{self, IRBuilder, IRModule, InstructionData},
     error::Error,
     instruction::{Instruction, Module, Opcode, Operand, Register},
     value::{Primitive, Value},

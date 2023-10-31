@@ -29,15 +29,15 @@ impl fmt::Display for Value {
     }
 }
 
-pub struct IRBuilder {
-    instructions: Vec<Instruction>,
-    values: BTreeMap<Value, ValueData>,
-    variables: HashMap<String, Value>,
+pub struct IRModule {
+    pub(crate) instructions: Vec<Instruction>,
+    pub(crate) values: BTreeMap<Value, ValueData>,
+    pub(crate) variables: HashMap<String, Value>,
 }
 
-impl IRBuilder {
+impl IRModule {
     fn new() -> Self {
-        IRBuilder {
+        IRModule {
             instructions: Vec::new(),
             values: BTreeMap::new(),
             variables: HashMap::new(),
@@ -139,19 +139,19 @@ impl IRBuilder {
 }
 
 #[derive(Debug, Clone)]
-struct Instruction {
-    data: InstructionData,
-    result: Option<Value>,
+pub(crate) struct Instruction {
+    pub data: InstructionData,
+    pub result: Option<Value>,
 }
 
 impl Instruction {
-    pub fn new(data: InstructionData, result: Option<Value>) -> Self {
+    fn new(data: InstructionData, result: Option<Value>) -> Self {
         Instruction { data, result }
     }
 }
 
 #[derive(Debug, Clone)]
-enum InstructionData {
+pub(crate) enum InstructionData {
     Binary {
         op: Opcode,
         lhs: Value,
@@ -198,19 +198,22 @@ enum InstructionData {
     },
 }
 
-pub struct CodeGen {
-    ir_builer: IRBuilder,
+pub struct IRBuilder {
+    module: IRModule,
 }
 
-impl CodeGen {
-    pub fn new() -> Self {
-        CodeGen {
-            ir_builer: IRBuilder::new(),
+impl IRBuilder {
+    fn new() -> Self {
+        IRBuilder {
+            module: IRModule::new(),
         }
     }
 
-    pub fn compile(&mut self, expr: Expression) {
-        self.compile_expr(expr);
+    pub fn build_expr(expr: Expression) -> IRModule {
+        let mut builder = IRBuilder::new();
+        builder.compile_expr(expr);
+        let IRBuilder { module } = builder;
+        module
     }
 
     fn compile_expr(&mut self, expr: Expression) -> Value {
@@ -222,7 +225,7 @@ impl CodeGen {
             Expression::UnaryOperation(UnaryOperationExpression { op, expr }) => {
                 let operand = self.compile_expr(*expr);
                 let op = Opcode::try_from(op).unwrap();
-                self.ir_builer.unaryop(op, operand)
+                self.module.unaryop(op, operand)
             }
             Expression::Grouped(GroupedExpression(expr)) => self.compile_expr(*expr),
             Expression::Literal(lit) => {
@@ -236,14 +239,13 @@ impl CodeGen {
                     LiteralExpression::Undefined => Primitive::Undefined,
                 };
 
-                self.ir_builer.make_constant(v)
+                self.module.make_constant(v)
             }
             Expression::Identifier(IdentifierExpression { name }) => {
-                if let Some(var) = self.ir_builer.lookup_variable(&name) {
+                if let Some(var) = self.module.lookup_variable(&name) {
                     return var;
                 }
-                self.ir_builer
-                    .make_constant(Primitive::String(Arc::new(name)))
+                self.module.make_constant(Primitive::String(Arc::new(name)))
             }
             Expression::Array(ArrayExpression { elements }) => {
                 let mut array = Vec::new();
@@ -252,7 +254,7 @@ impl CodeGen {
                     array.push(element);
                 }
 
-                self.ir_builer.make_array(&array)
+                self.module.make_array(&array)
             }
             Expression::Dictionary(DictionaryExpression { elements }) => {
                 let mut dict = Vec::new();
@@ -262,9 +264,9 @@ impl CodeGen {
                     dict.push((key, value));
                 }
 
-                self.ir_builer.make_dictionary(&dict)
+                self.module.make_dictionary(&dict)
             }
-            Expression::Variable(VariableExpression { name }) => self.ir_builer.load_env(&name),
+            Expression::Variable(VariableExpression { name }) => self.module.load_env(&name),
             _ => {
                 unimplemented!("compile_expr: {:?}", expr)
             }
@@ -277,23 +279,23 @@ impl CodeGen {
         match (op, rhs) {
             (Opcode::Call, Expression::Identifier(ident)) => {
                 let member = self.compile_identfier(ident, false);
-                self.ir_builer.fn_call(lhs, &[member])
+                self.module.fn_call(lhs, &[member])
             }
             (op, rhs) => {
                 let rhs = self.compile_expr(rhs);
-                self.ir_builer.binop(op, lhs, rhs)
+                self.module.binop(op, lhs, rhs)
             }
         }
     }
 
     fn compile_identfier(&mut self, ident: IdentifierExpression, maybe_var: bool) -> Value {
         if maybe_var {
-            if let Some(var) = self.ir_builer.lookup_variable(&ident.name) {
+            if let Some(var) = self.module.lookup_variable(&ident.name) {
                 return var;
             }
         }
 
-        self.ir_builer
+        self.module
             .make_constant(Primitive::String(Arc::new(ident.name.to_string())))
     }
 }
@@ -319,11 +321,9 @@ mod test {
 
             println!("expr {:?}", expr);
 
-            let mut cg = CodeGen::new();
+            let module = IRBuilder::build_expr(expr);
 
-            cg.compile(expr);
-
-            println!("{:?}", cg.ir_builer.instructions);
+            println!("{:?}", module.instructions);
 
             println!("====",);
         }

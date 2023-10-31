@@ -1,5 +1,9 @@
 use core::fmt;
-use std::{borrow::Cow, ops::Deref, str::CharIndices};
+use std::{
+    borrow::Cow,
+    ops::Deref,
+    str::{CharIndices, Chars},
+};
 
 use crate::ast::{BinaryOperation, LiteralExpression};
 
@@ -257,58 +261,22 @@ impl TryInto<LiteralExpression> for Keyword {
 #[derive(Debug, Clone)]
 struct Lexer<'i> {
     input: &'i str,
-    chars: CharIndices<'i>,
-    look_ahead: Option<char>,
-    pos: usize,
+    chars: Chars<'i>,
+    loc: LineColumn,
 }
 
 // reference:
 impl<'i> Lexer<'i> {
     pub fn new(input: &'i str) -> Self {
-        let mut lexer = Self {
+        Self {
             input,
-            chars: input.char_indices(),
-            look_ahead: None,
-            pos: 0,
-        };
-
-        // Advance to first char.
-        lexer.next_char();
-        lexer
-    }
-
-    /// Advance to the next chararter.
-    /// Return the next lookahead chararter, or None when when reach end.
-    fn next_char(&mut self) -> Option<char> {
-        match self.chars.next() {
-            Some((idx, c)) => {
-                self.pos = idx;
-                self.look_ahead = Some(c);
-            }
-            None => self.look_ahead = None,
-        }
-        self.look_ahead
-    }
-
-    fn eat_char(&mut self, expected: char) -> Result<(), TokenError> {
-        match self.look_ahead {
-            Some(c) => {
-                if c == expected {
-                    self.next_char();
-                    Ok(())
-                } else {
-                    Err(
-                        TokenError::new(format!("expect {expected:?}, but found {c:?}"))
-                            .with_position(self.pos),
-                    )
-                }
-            }
-            None => Err(TokenError::unexpected_eof(self.pos)),
+            chars: input.chars(),
+            loc: LineColumn { line: 1, column: 1 },
         }
     }
 
-    fn next(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        if let Some(c) = self.look_ahead {
+    fn next(&mut self) -> Result<LocatedToken, TokenError> {
+        if let Some(c) = self.peek_char() {
             match c {
                 '"' => return self.eat_string(),
                 '$' => return self.eat_variable(),
@@ -316,26 +284,21 @@ impl<'i> Lexer<'i> {
                 c if c.is_ascii_digit() => return self.eat_number(),
                 c if c.is_ascii_alphabetic() || c == '_' => return self.eat_identifier(),
                 c => {
-                    if Symbol::STRS.contains(&self.peek_nchar(3)) {
-                        let symbol = Symbol::from_str(self.take_nchar(3)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(
-                            Token::Symbol(symbol),
-                            self.new_span(self.pos),
-                        ));
+                    let start = self.loc;
+                    if self.has_at_least(3) && Symbol::STRS.contains(&self.peek_nchar(3).as_str()) {
+                        let symbol =
+                            Symbol::from_str(self.take_nchar(3).as_str()).expect("Invalid symbol");
+                        return Ok(self.new_token(Token::Symbol(symbol), start));
                     }
-                    if Symbol::STRS.contains(&self.peek_nchar(2)) {
-                        let symbol = Symbol::from_str(self.take_nchar(2)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(
-                            Token::Symbol(symbol),
-                            self.new_span(self.pos),
-                        ));
+                    if self.has_at_least(2) && Symbol::STRS.contains(&self.peek_nchar(2).as_str()) {
+                        let symbol =
+                            Symbol::from_str(self.take_nchar(2).as_str()).expect("Invalid symbol");
+                        return Ok(self.new_token(Token::Symbol(symbol), start));
                     }
-                    if Symbol::STRS.contains(&self.peek_nchar(1)) {
-                        let symbol = Symbol::from_str(self.take_nchar(1)).expect("Invalid symbol");
-                        return Ok(SpannedToken::new(
-                            Token::Symbol(symbol),
-                            self.new_span(self.pos),
-                        ));
+                    if self.has_at_least(1) && Symbol::STRS.contains(&self.peek_nchar(1).as_str()) {
+                        let symbol =
+                            Symbol::from_str(self.take_nchar(1).as_str()).expect("Invalid symbol");
+                        return Ok(self.new_token(Token::Symbol(symbol), start));
                     }
 
                     return Err(TokenError::new(format!("invalid char({})", c)));
@@ -343,69 +306,62 @@ impl<'i> Lexer<'i> {
             }
         }
 
-        Ok(SpannedToken::new(Token::Eof, self.new_span(self.pos)))
+        Ok(self.new_token(Token::Eof, self.loc))
     }
 
-    fn eat_whitespace(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        let start = self.pos;
+    fn eat_whitespace(&mut self) -> Result<LocatedToken, TokenError> {
+        let start = self.loc;
         let _ws = self.eat_while(|c| c.is_whitespace());
-        Ok(SpannedToken::new(
-            Token::Whitespace,
-            Span::new(self.input, start, self.pos),
-        ))
+
+        Ok(self.new_token(Token::Whitespace, start))
     }
 
-    fn eat_number(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        let start = self.pos;
+    fn eat_number(&mut self) -> Result<LocatedToken, TokenError> {
+        let start = self.loc;
 
-        let _i = self.eat_integer();
+        let mut s = self.eat_integer();
+        if let Some('.') = self.peek_char() {
+            let c = self.consume_char('.')?;
 
-        if self.look_ahead == Some('.') {
-            self.next_char();
+            s.push(c);
+
             let f = self.eat_integer();
             if f.is_empty() {
                 return Err(TokenError::new("invalid float"));
             }
-            let f = self
-                .sub_str(start)
+
+            s.push_str(&f);
+
+            let f = s
                 .parse::<f64>()
                 .map_err(|err| TokenError::new("invalid float").with_source(err))?;
-            return Ok(SpannedToken::new(
-                Token::Literal(Literal::Float(f)),
-                self.new_span(start),
-            ));
+            return Ok(self.new_token(Token::Literal(Literal::Float(f)), start));
         }
 
-        let i = self
-            .sub_str(start)
+        let i = s
             .parse::<i64>()
             .map_err(|err| TokenError::new("invalid integer").with_source(err))?;
 
-        return Ok(SpannedToken::new(
-            Token::Literal(Literal::Integer(i)),
-            self.new_span(start),
-        ));
+        Ok(self.new_token(Token::Literal(Literal::Integer(i)), start))
     }
 
-    fn eat_integer(&mut self) -> &str {
+    fn eat_integer(&mut self) -> String {
         self.eat_while(|c| c.is_ascii_digit())
     }
 
-    fn eat_string(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        let start = self.pos;
+    fn eat_string(&mut self) -> Result<LocatedToken, TokenError> {
+        let start = self.loc;
         self.next_char();
         let s = self.eat_qouted('"')?;
-        Ok(SpannedToken::new(
-            Token::Literal(Literal::String(s)),
-            self.new_span(start),
-        ))
+
+        Ok(self.new_token(Token::Literal(Literal::String(s)), start))
     }
 
     fn eat_qouted(&mut self, qoute: char) -> Result<String, TokenError> {
         let mut ret = String::new();
 
         loop {
-            match self.look_ahead {
+            match self.peek_char() {
                 Some(c) if c == qoute => {
                     self.next_char();
                     return Ok(ret);
@@ -446,47 +402,71 @@ impl<'i> Lexer<'i> {
         }
     }
 
-    fn eat_identifier(&mut self) -> Result<SpannedToken<'i>, TokenError> {
-        let start = self.pos;
+    fn eat_identifier(&mut self) -> Result<LocatedToken, TokenError> {
+        let start = self.loc;
         let s = self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
 
-        if let Ok(kw) = Keyword::from_str(s) {
-            return Ok(SpannedToken::new(Token::Keyword(kw), self.new_span(start)));
+        if let Ok(kw) = Keyword::from_str(s.as_str()) {
+            return Ok(self.new_token(Token::Keyword(kw), start));
         }
 
-        Ok(SpannedToken::new(
+        Ok(self.new_token(
             Token::Identifier(Identifier {
                 name: s.to_string(),
             }),
-            self.new_span(start),
+            start,
         ))
     }
 
-    fn eat_variable(&mut self) -> Result<SpannedToken<'i>, TokenError> {
+    fn eat_variable(&mut self) -> Result<LocatedToken, TokenError> {
         self.next_char();
-        let start = self.pos;
+        let start = self.loc;
         let s = self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
-        Ok(SpannedToken::new(
+        Ok(self.new_token(
             Token::Variable(Variable {
                 name: s.to_string(),
             }),
-            self.new_span(start),
+            start,
         ))
     }
 
-    fn peek_nchar(&mut self, n: usize) -> &'i str {
-        let start = self.pos;
-        let sub = self
-            .chars
-            .clone()
-            .take(n)
-            .map(|(_i, c)| c)
-            .collect::<String>();
-
-        &self.input[start..start + sub.len()]
+    /// Advance to the next chararter.
+    fn next_char(&mut self) -> Option<char> {
+        match self.chars.next() {
+            Some(c) => {
+                if c == '\n' {
+                    self.loc.line += 1;
+                    self.loc.column = 1;
+                } else {
+                    self.loc.column += 1;
+                }
+                Some(c)
+            }
+            None => None,
+        }
     }
 
-    fn take_nchar(&mut self, n: usize) -> &'i str {
+    fn consume_char(&mut self, ch: char) -> Result<char, TokenError> {
+        match self.next_char() {
+            Some(c) if c != ch => Err(TokenError::new(format!("expected '{}', got '{}'", ch, c))),
+            Some(c) => Ok(c),
+            None => Err(TokenError::new(format!("expected '{}', got EOF", ch))),
+        }
+    }
+
+    fn peek_char(&self) -> Option<char> {
+        self.chars.clone().next()
+    }
+
+    fn has_at_least(&self, n: usize) -> bool {
+        self.chars.clone().count() >= n
+    }
+
+    fn peek_nchar(&self, n: usize) -> String {
+        self.chars.clone().take(n).collect::<String>()
+    }
+
+    fn take_nchar(&mut self, n: usize) -> String {
         let s = self.peek_nchar(n);
         for _ in 0..n {
             self.next_char();
@@ -500,24 +480,27 @@ impl<'i> Lexer<'i> {
         }
     }
 
-    fn eat_while(&mut self, predicate: impl Fn(char) -> bool) -> &'i str {
-        let start = self.pos;
-        while let Some(c) = self.look_ahead {
+    fn eat_while(&mut self, predicate: impl Fn(char) -> bool) -> String {
+        let mut s = String::new();
+        while let Some(c) = self.peek_char() {
             if !predicate(c) {
                 break;
             }
             self.next_char();
+            s.push(c);
         }
 
-        &self.input[start..self.pos]
+        s
     }
 
-    fn sub_str(&self, start: usize) -> &str {
-        &self.input[start..self.pos]
-    }
-
-    fn new_span(&self, start: usize) -> Span<'i> {
-        Span::new(self.input, start, self.pos)
+    fn new_token(&self, token: Token, start: LineColumn) -> LocatedToken {
+        LocatedToken::new(
+            token,
+            Location {
+                start,
+                end: self.loc,
+            },
+        )
     }
 }
 
@@ -553,22 +536,46 @@ impl TokenError {
 }
 
 #[derive(Debug, Clone)]
-pub struct SpannedToken<'i> {
-    pub(crate) token: Token,
-    pub(crate) span: Span<'i>,
+pub struct LocatedToken {
+    pub token: Token,
+    pub location: Location,
 }
 
-impl<'i> SpannedToken<'i> {
-    pub fn new(token: Token, span: Span<'i>) -> Self {
-        Self { token, span }
+impl LocatedToken {
+    pub fn new(token: Token, location: Location) -> LocatedToken {
+        LocatedToken { token, location }
     }
 }
 
-impl<'i> Deref for SpannedToken<'i> {
+impl Deref for LocatedToken {
     type Target = Token;
 
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &Token {
         &self.token
+    }
+}
+
+impl AsRef<Token> for LocatedToken {
+    fn as_ref(&self) -> &Token {
+        &self.token
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct LineColumn {
+    line: usize,
+    column: usize,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Location {
+    start: LineColumn,
+    end: LineColumn,
+}
+
+impl Location {
+    pub fn new(start: LineColumn, end: LineColumn) -> Self {
+        Self { start, end }
     }
 }
 
@@ -594,7 +601,7 @@ impl fmt::Debug for Span<'_> {
 }
 
 impl<'i> IntoIterator for Lexer<'i> {
-    type Item = Result<SpannedToken<'i>, TokenError>;
+    type Item = Result<LocatedToken, TokenError>;
     type IntoIter = Tokens<'i>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -616,7 +623,7 @@ impl<'i> Tokens<'i> {
 }
 
 impl<'i> Iterator for Tokens<'i> {
-    type Item = Result<SpannedToken<'i>, TokenError>;
+    type Item = Result<LocatedToken, TokenError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
@@ -634,37 +641,35 @@ impl<'i> Iterator for Tokens<'i> {
     }
 }
 
-// #[derive(Debug, Clone)]
-// pub struct Tokens<'i> {
-//     inner: Lexer<'i>,
-// }
+#[derive(Debug, Clone)]
+pub struct TokenStream<'i> {
+    inner: Lexer<'i>,
+}
 
-// impl<'i> Tokens<'i> {
-//     pub fn new(input: &'i str) -> Self {
-//         Self {
-//             inner: Lexer::new(input),
-//         }
-//     }
-// }
+impl<'i> TokenStream<'i> {
+    pub fn new(input: &'i str) -> Self {
+        Self {
+            inner: Lexer::new(input),
+        }
+    }
+}
 
-// impl<'i> Iterator for Tokens<'i> {
-//     type Item = Result<Token, TokenError>;
+impl<'i> Iterator for TokenStream<'i> {
+    type Item = Result<Token, TokenError>;
 
-//     fn next(&mut self) -> Option<Self::Item> {
-//         match self.inner.next() {
-//             Ok(pair) => {
-//                 if pair.token == Token::Eof {
-//                     None
-//                 } else if pair.token == Token::Whitespace {
-//                     self.next()
-//                 } else {
-//                     Some(Ok(pair.token))
-//                 }
-//             }
-//             Err(err) => Some(Err(err)),
-//         }
-//     }
-// }
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.next() {
+            Ok(pair) => {
+                if pair.token == Token::Eof {
+                    None
+                } else {
+                    Some(Ok(pair.token))
+                }
+            }
+            Err(err) => Some(Err(err)),
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

@@ -1,6 +1,7 @@
 mod ast;
 mod compiler;
 mod error;
+mod eval;
 mod instruction;
 mod interpreter;
 mod lexer;

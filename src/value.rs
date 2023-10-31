@@ -50,6 +50,7 @@ pub enum Value {
     Array(Vec<Value>),
     Dictionary(HashMap<Arc<String>, Value>),
     Dynamic(Arc<dyn Object>),
+    Function(Arc<dyn Function>),
 }
 
 impl From<Primitive> for Value {
@@ -185,4 +186,8 @@ pub trait Object: fmt::Display + fmt::Debug + Any + Sync + Send {
     fn call_method(&self, _name: &str, _args: &[Value]) -> Result<Option<Value>, Error> {
         Err(Error::OpIllegalOperate)
     }
+}
+
+pub trait Function: fmt::Display + fmt::Debug + Sync + Send {
+    fn call(&self, args: &[Value]) -> Result<Option<Value>, Error>;
 }
