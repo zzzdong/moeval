@@ -8,9 +8,9 @@ pub enum Error {
     OpUnimplemented(Opcode),
     OpIllegalOperate,
     InvalidArgument,
-    UndefinedVariable(Arc<String>),
+    UndefinedVariable(String),
     IndexOutOfBounds(usize, usize),
-    EntryNotFound(Arc<String>),
+    EntryNotFound(String),
     Message(String),
 }
 

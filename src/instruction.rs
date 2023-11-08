@@ -1,9 +1,6 @@
 use std::{fmt, ops::Index};
 
-use crate::{
-    ast::{BinaryOperation, UnaryOperation},
-    value::Primitive,
-};
+use crate::{ast::{BinaryOperation, UnaryOperation}, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Opcode {
@@ -88,7 +85,7 @@ impl TryFrom<UnaryOperation> for Opcode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Operand {
-    Immed(Primitive),
+    Immed(Value),
     Register(Register),
     Stack(StackSlot),
     VirtReg(VirtReg),
@@ -98,7 +95,7 @@ pub enum Operand {
 impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Operand::Immed(value) => write!(f, "{}", value),
+            Operand::Immed(value) => write!(f, "{:?}", value),
             Operand::Register(reg) => write!(f, "{}", reg),
             Operand::VirtReg(vreg) => write!(f, "{}", vreg),
             Operand::Stack(s) => write!(f, "{}", s),
@@ -321,10 +318,3 @@ impl fmt::Display for StackSlot {
     }
 }
 
-pub enum Value {
-    Immed(Primitive),
-    Env(usize),
-    Const(usize),
-}
-
-pub struct ValueId(usize);

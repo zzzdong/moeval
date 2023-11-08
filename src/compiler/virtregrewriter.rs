@@ -2,8 +2,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 use crate::{
     instruction::{Instruction, Module, Opcode, Operand},
-    instruction::{Register, StackSlot, VirtReg},
-    value::Primitive,
+    instruction::{Register, StackSlot, VirtReg}, Value,
 };
 
 use super::ModuleRewriter;
@@ -29,7 +28,7 @@ impl VirtRegRewriter {
         if stack_size > 0 {
             output.push(Instruction::single(
                 Opcode::StackAlloc,
-                Operand::Immed(Primitive::Integer(stack_size as i64)),
+                Operand::Immed(Value::Integer(stack_size as i64)),
             ));
         }
 

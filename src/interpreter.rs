@@ -55,17 +55,28 @@ mod test {
 
         let ret = Interpreter::eval(source, &env).unwrap();
 
-        assert_eq!(ret, Value::Bool(true));
+        assert_eq!(ret, Value::Boolean(true));
     }
 
     #[test]
-    fn test_dict() {
+    fn test_in() {
         let source = r#""s" in {s: "String", i: 100}"#;
 
         let mut env = Environment::new();
 
         let ret = Interpreter::eval(source, &env).unwrap();
 
-        assert_eq!(ret, Value::Bool(true));
+        assert_eq!(ret, Value::Boolean(true));
+    }
+
+    #[test]
+    fn test_matches() {
+        let source = r#""123" =~ "\\d+""#;
+
+        let mut env = Environment::new();
+
+        let ret = Interpreter::eval(source, &env).unwrap();
+
+        assert_eq!(ret, Value::Boolean(true));
     }
 }

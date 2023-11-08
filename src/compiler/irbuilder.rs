@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use crate::ast::*;
+use crate::{ast::*, Value};
 use crate::instruction::VirtReg;
 use crate::instruction::{Instruction, Module, Opcode, Operand};
-use crate::value::Primitive;
+// use crate::value::Value;
 
 #[derive(Debug, Clone)]
 struct VirtRegAllocator {
@@ -57,7 +57,7 @@ impl IRBuilder {
                             Opcode::LoadEnv,
                             &[
                                 dest.clone(),
-                                Operand::Immed(Primitive::String(name.clone().into())),
+                                Operand::Immed(Value::String(name.clone().into())),
                             ],
                         );
 
@@ -81,7 +81,7 @@ impl IRBuilder {
                                 &[
                                     dest.clone(),
                                     lhs,
-                                    Operand::Immed(Primitive::String(name.into())),
+                                    Operand::Immed(Value::String(name.into())),
                                 ],
                             );
                             dest
@@ -122,7 +122,7 @@ impl IRBuilder {
                 let dict = self.alloc_virt_reg();
                 self.emit(Opcode::NewDictionary, &[dict.clone()]);
                 for kv in elements {
-                    let key = Operand::Immed(Primitive::String(kv.key.name.into()));
+                    let key = Operand::Immed(Value::String(kv.key.name.into()));
                     let value = self.build_expr_inner(*kv.value);
                     self.emit(Opcode::DictionaryPut, &[dict.clone(), key, value]);
                 }
@@ -148,13 +148,13 @@ impl IRBuilder {
 
     fn create_literal_operand(&mut self, lit: LiteralExpression) -> Operand {
         match lit {
-            LiteralExpression::Null => Operand::Immed(Primitive::Null),
-            LiteralExpression::Undefined => Operand::Immed(Primitive::Undefined),
-            LiteralExpression::Boolean(b) => Operand::Immed(Primitive::Bool(b)),
-            LiteralExpression::Integer(i) => Operand::Immed(Primitive::Integer(i)),
-            LiteralExpression::Float(f) => Operand::Immed(Primitive::Float(f)),
-            LiteralExpression::Char(c) => Operand::Immed(Primitive::Char(c)),
-            LiteralExpression::String(s) => Operand::Immed(Primitive::String(s.into())),
+            LiteralExpression::Null => Operand::Immed(Value::Null),
+            LiteralExpression::Undefined => Operand::Immed(Value::Undefined),
+            LiteralExpression::Boolean(b) => Operand::Immed(Value::Boolean(b)),
+            LiteralExpression::Integer(i) => Operand::Immed(Value::Integer(i)),
+            LiteralExpression::Float(f) => Operand::Immed(Value::Float(f)),
+            LiteralExpression::Char(c) => Operand::Immed(Value::Char(c)),
+            LiteralExpression::String(s) => Operand::Immed(Value::String(s.into())),
         }
     }
 

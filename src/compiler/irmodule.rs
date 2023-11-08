@@ -4,26 +4,27 @@ use std::{
     sync::Arc,
 };
 
-use crate::{ast::*, instruction::Opcode, value::Primitive};
+use crate::value::Value;
+use crate::{ast::*, instruction::Opcode};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ValueData {
     /// immediate value
-    Constant(Primitive),
+    Constant(Value),
     /// value generate by inst, usually be a result.
     Inst,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Value(usize);
+pub struct IRValue(usize);
 
-impl Value {
+impl IRValue {
     fn new(idx: usize) -> Self {
-        Value(idx)
+        IRValue(idx)
     }
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for IRValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -31,8 +32,8 @@ impl fmt::Display for Value {
 
 pub struct IRModule {
     pub(crate) instructions: Vec<Instruction>,
-    pub(crate) values: BTreeMap<Value, ValueData>,
-    pub(crate) variables: HashMap<String, Value>,
+    pub(crate) values: BTreeMap<IRValue, ValueData>,
+    pub(crate) variables: HashMap<String, IRValue>,
 }
 
 impl IRModule {
@@ -44,21 +45,21 @@ impl IRModule {
         }
     }
 
-    fn binop(&mut self, op: Opcode, lhs: Value, rhs: Value) -> Value {
+    fn binop(&mut self, op: Opcode, lhs: IRValue, rhs: IRValue) -> IRValue {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Binary { op, lhs, rhs };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
     }
 
-    fn unaryop(&mut self, op: Opcode, value: Value) -> Value {
+    fn unaryop(&mut self, op: Opcode, value: IRValue) -> IRValue {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Unary { op, operand: value };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
     }
 
-    fn fn_call(&mut self, func: Value, args: &[Value]) -> Value {
+    fn fn_call(&mut self, func: IRValue, args: &[IRValue]) -> IRValue {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Call {
             func,
@@ -68,10 +69,10 @@ impl IRModule {
         result
     }
 
-    fn make_array(&mut self, elements: &[Value]) -> Value {
+    fn make_array(&mut self, elements: &[IRValue]) -> IRValue {
         let array = self.make_value(ValueData::Inst);
         let data = InstructionData::NewArray {
-            size: self.make_constant(Primitive::Integer(elements.len() as i64)),
+            size: self.make_constant(Value::Integer(elements.len() as i64)),
         };
         self.instructions.push(Instruction::new(data, Some(array)));
 
@@ -88,7 +89,7 @@ impl IRModule {
         array
     }
 
-    fn make_dictionary(&mut self, fields: &[(Value, Value)]) -> Value {
+    fn make_dictionary(&mut self, fields: &[(IRValue, IRValue)]) -> IRValue {
         let dict = self.make_value(ValueData::Inst);
         let data = InstructionData::NewDictionary;
         self.instructions.push(Instruction::new(data, Some(dict)));
@@ -107,33 +108,32 @@ impl IRModule {
         dict
     }
 
-    fn make_constant(&mut self, value: Primitive) -> Value {
+    fn make_constant(&mut self, value: Value) -> IRValue {
         let idx = self.values.len();
         self.values
-            .insert(Value::new(idx), ValueData::Constant(value));
-        Value::new(idx)
+            .insert(IRValue::new(idx), ValueData::Constant(value));
+        IRValue::new(idx)
     }
 
-    fn make_value(&mut self, value: ValueData) -> Value {
+    fn make_value(&mut self, value: ValueData) -> IRValue {
         let idx = self.values.len();
-        self.values.insert(Value::new(idx), value);
-        Value::new(idx)
+        self.values.insert(IRValue::new(idx), value);
+        IRValue::new(idx)
     }
 
-    fn make_variable(&mut self, name: String, value: Value) -> Value{
+    fn make_variable(&mut self, name: String, value: IRValue) -> IRValue {
         self.variables.insert(name, value);
         value
     }
 
-    fn lookup_variable(&mut self, name: &str) -> Option<Value> {
+    fn lookup_variable(&mut self, name: &str) -> Option<IRValue> {
         self.variables.get(name).cloned()
     }
 
-    fn load_env(&mut self, name: &str) -> Value {
+    fn load_env(&mut self, name: &str) -> IRValue {
         let result = self.make_value(ValueData::Inst);
-        let data = InstructionData::LoadEnv {
-            name: name.to_string(),
-        };
+        let name = self.make_constant(Value::String(name.to_string()));
+        let data = InstructionData::LoadEnv { name };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
     }
@@ -141,75 +141,56 @@ impl IRModule {
     fn codegen(&self) -> Vec<String> {
         let mut code = vec![];
         for instruction in &self.instructions {
-            match &instruction.data {
-                InstructionData::Binary { op, lhs, rhs } => {
-                    code.push(format!(
-                        "{:?} {} {} {}",
-                        op,
-                        self.value_str(&instruction.result.unwrap()),
-                        self.value_str(lhs),
-                        self.value_str(rhs),
-                    ));
-                }
-                InstructionData::Unary { op, operand } => {
-                    code.push(format!(
-                        "{:?} {} {}",
-                        op,
-                        self.value_str(&instruction.result.unwrap()),
-                        self.value_str(operand)
-                    ));
-                }
-                InstructionData::LoadEnv { name } => {
-                    code.push(format!(
-                        "{:?} {} {}",
-                        Opcode::LoadEnv,
-                        self.value_str(&instruction.result.unwrap()),
-                        name
-                    ));
-                }
-                InstructionData::Call { func, args } => {
-                    unimplemented!()
-                }
-                InstructionData::Return { value } => {
-                    unimplemented!()
-                }
-                InstructionData::NewArray { size } => {
-                    code.push(format!(
-                        "{:?} {} {}",
-                        Opcode::NewArray,
-                        self.value_str(&instruction.result.unwrap()),
-                        self.value_str(size)
-                    ));
-                }
-                InstructionData::ArrayPush { array, element } => {
-                    code.push(format!("{:?} {} {}", Opcode::ArrayPush, self.value_str(array), self.value_str(element)));
-                }
-                InstructionData::NewDictionary => {
-                    code.push(format!(
-                        "{:?} {}",
-                        Opcode::NewDictionary,
-                        self.value_str(&instruction.result.unwrap())
-                    ));
-                }
-                InstructionData::DictionaryPut { object, key, value } => {
-                    code.push(format!(
-                        "{:?} {} {} {}",
-                        Opcode::DictionaryPut,
-                        self.value_str(object),
-                        self.value_str(key),
-                        self.value_str(value)
-                    ));
-                }
-            }
+            code.push(self.ir_code(instruction));
         }
 
         code
     }
 
-    fn value_str(&self, value: &Value) -> String {
+    fn ir_code(&self, instruction: &Instruction) -> String {
+        let op = match &instruction.data {
+            InstructionData::Binary { op, lhs, rhs } => self.op_code(op, &[lhs, rhs]),
+            InstructionData::Unary { op, operand } => self.op_code(op, &[operand]),
+            InstructionData::LoadEnv { name } => self.op_code(&Opcode::LoadEnv, &[name]),
+            InstructionData::Call { func, args } => {
+                unimplemented!()
+            }
+            InstructionData::Return { value } => {
+                unimplemented!()
+            }
+            InstructionData::NewArray { size } => self.op_code(&Opcode::NewArray, &[size]),
+            InstructionData::ArrayPush { array, element } => {
+                self.op_code(&Opcode::ArrayPush, &[array, element])
+            }
+            InstructionData::NewDictionary => self.op_code(&Opcode::NewDictionary, &[]),
+            InstructionData::DictionaryPut { object, key, value } => {
+                self.op_code(&Opcode::DictionaryPut, &[object, key, value])
+            }
+        };
+
+        if let Some(ret) = instruction.result {
+            format!("{} = {}", self.value_str(&ret), op)
+        } else {
+            op
+        }
+    }
+
+    fn op_code(&self, op: &Opcode, operands: &[&IRValue]) -> String {
+        format!(
+            "{:?} {}",
+            op,
+            operands
+                .iter()
+                .map(|v| self.value_str(&v))
+                .collect::<Vec<String>>()
+                .join(" ")
+        )
+    }
+
+    fn value_str(&self, value: &IRValue) -> String {
         match self.values.get(value).unwrap() {
-            ValueData::Constant(constant) => format!("{}", constant),
-            ValueData::Inst => format!("v{}", value.0),
+            ValueData::Constant(constant) => format!("{:?}", constant),
+            ValueData::Inst => format!("%{}", value.0),
         }
     }
 }
@@ -217,11 +198,11 @@ impl IRModule {
 #[derive(Debug, Clone)]
 pub(crate) struct Instruction {
     pub data: InstructionData,
-    pub result: Option<Value>,
+    pub result: Option<IRValue>,
 }
 
 impl Instruction {
-    fn new(data: InstructionData, result: Option<Value>) -> Self {
+    fn new(data: InstructionData, result: Option<IRValue>) -> Self {
         Instruction { data, result }
     }
 }
@@ -230,35 +211,35 @@ impl Instruction {
 pub(crate) enum InstructionData {
     Binary {
         op: Opcode,
-        lhs: Value,
-        rhs: Value,
+        lhs: IRValue,
+        rhs: IRValue,
     },
     Unary {
         op: Opcode,
-        operand: Value,
+        operand: IRValue,
     },
     LoadEnv {
-        name: String,
+        name: IRValue,
     },
     Call {
-        func: Value,
-        args: Vec<Value>,
+        func: IRValue,
+        args: Vec<IRValue>,
     },
     Return {
-        value: Value,
+        value: IRValue,
     },
     NewArray {
-        size: Value,
+        size: IRValue,
     },
     ArrayPush {
-        array: Value,
-        element: Value,
+        array: IRValue,
+        element: IRValue,
     },
     NewDictionary,
     DictionaryPut {
-        object: Value,
-        key: Value,
-        value: Value,
+        object: IRValue,
+        key: IRValue,
+        value: IRValue,
     },
 }
 
@@ -280,7 +261,7 @@ impl IRBuilder {
         module
     }
 
-    fn compile_expr(&mut self, expr: Expression) -> Value {
+    fn compile_expr(&mut self, expr: Expression) -> IRValue {
         match expr {
             Expression::BinaryOperation(BinaryOperationExpression { op, left, right }) => {
                 let op = Opcode::try_from(op).unwrap();
@@ -294,13 +275,13 @@ impl IRBuilder {
             Expression::Grouped(GroupedExpression(expr)) => self.compile_expr(*expr),
             Expression::Literal(lit) => {
                 let v = match lit {
-                    LiteralExpression::Integer(i) => Primitive::Integer(i),
-                    LiteralExpression::Float(f) => Primitive::Float(f),
-                    LiteralExpression::String(s) => Primitive::String(Arc::new(s)),
-                    LiteralExpression::Boolean(b) => Primitive::Bool(b),
-                    LiteralExpression::Char(c) => Primitive::Char(c),
-                    LiteralExpression::Null => Primitive::Null,
-                    LiteralExpression::Undefined => Primitive::Undefined,
+                    LiteralExpression::Integer(i) => Value::Integer(i),
+                    LiteralExpression::Float(f) => Value::Float(f),
+                    LiteralExpression::String(s) => Value::String(s),
+                    LiteralExpression::Boolean(b) => Value::Boolean(b),
+                    LiteralExpression::Char(c) => Value::Char(c),
+                    LiteralExpression::Null => Value::Null,
+                    LiteralExpression::Undefined => Value::Undefined,
                 };
 
                 self.module.make_constant(v)
@@ -338,7 +319,7 @@ impl IRBuilder {
         }
     }
 
-    fn compile_binop(&mut self, op: Opcode, lhs: Expression, rhs: Expression) -> Value {
+    fn compile_binop(&mut self, op: Opcode, lhs: Expression, rhs: Expression) -> IRValue {
         let lhs = self.compile_expr(lhs);
 
         match (op, rhs) {
@@ -353,15 +334,14 @@ impl IRBuilder {
         }
     }
 
-    fn compile_identfier(&mut self, ident: IdentifierExpression, maybe_var: bool) -> Value {
+    fn compile_identfier(&mut self, ident: IdentifierExpression, maybe_var: bool) -> IRValue {
         if maybe_var {
             if let Some(var) = self.module.lookup_variable(&ident.name) {
                 return var;
             }
         }
 
-        self.module
-            .make_constant(Primitive::String(Arc::new(ident.name.to_string())))
+        self.module.make_constant(Value::String(ident.name))
     }
 }
 
@@ -393,8 +373,6 @@ mod test {
             for line in module.codegen() {
                 println!("{:?};", line);
             }
-
-            
 
             println!("====",);
         }

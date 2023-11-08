@@ -4,7 +4,7 @@ use crate::{
     compiler::irmodule::{self, IRBuilder, IRModule, InstructionData},
     error::Error,
     instruction::{Instruction, Module, Opcode, Operand, Register},
-    value::{Primitive, Value},
+    value::{Value},
 };
 
 pub struct Environment {
@@ -137,7 +137,7 @@ impl Vm {
                     }
                 }
                 Opcode::NewDictionary => {
-                    let dict: HashMap<Arc<String>, Value> = HashMap::new();
+                    let dict: HashMap<String, Value> = HashMap::new();
                     self.store_operand(Value::Dictionary(dict), operand0);
                 }
                 Opcode::DictionaryPut => {
@@ -186,7 +186,7 @@ impl Vm {
 
     fn load_env(&self, operand: Operand, environment: &Environment) -> Result<Value, Error> {
         match operand {
-            Operand::Immed(Primitive::String(env)) => {
+            Operand::Immed(Value::String(env)) => {
                 environment.get(&env).ok_or(Error::UndefinedVariable(env))
             }
             _ => Err(Error::InvalidArgument),
@@ -274,9 +274,9 @@ impl Ops for Value {
             (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Float(lhs + rhs as f64)),
             (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Float(lhs + rhs)),
             (Value::String(lhs), Value::String(rhs)) => {
-                let mut s = lhs.to_string();
+                let mut s = lhs.clone();
                 s.push_str(&rhs);
-                Ok(Value::String(Arc::new(s)))
+                Ok(Value::String(s))
             }
             _ => Err(Error::OpIllegalOperate),
         }
@@ -334,87 +334,87 @@ impl Ops for Value {
 
     fn eq(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs == rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs as f64 == rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs == rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs == rhs)),
-            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs == rhs)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs == rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs as f64 == rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs == rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs == rhs)),
+            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Boolean(lhs == rhs)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn ne(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs != rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs as f64 != rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs != rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs != rhs)),
-            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs != rhs)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs != rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs as f64 != rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs != rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs != rhs)),
+            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Boolean(lhs != rhs)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn gt(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs > rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs as f64 > rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs > rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs > rhs)),
-            (Value::Bool(_), Value::Bool(_)) => Ok(Value::Bool(false)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs > rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs as f64 > rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs > rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs > rhs)),
+            (Value::Boolean(_), Value::Boolean(_)) => Ok(Value::Boolean(false)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn gte(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs >= rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs as f64 >= rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs >= rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs >= rhs)),
-            (Value::Bool(_), Value::Bool(_)) => Ok(Value::Bool(true)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs >= rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs as f64 >= rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs >= rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs >= rhs)),
+            (Value::Boolean(_), Value::Boolean(_)) => Ok(Value::Boolean(true)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn lt(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs < rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool((lhs as f64) < rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs < rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs < rhs)),
-            (Value::Bool(_), Value::Bool(_)) => Ok(Value::Bool(false)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs < rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean((lhs as f64) < rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs < rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs < rhs)),
+            (Value::Boolean(_), Value::Boolean(_)) => Ok(Value::Boolean(false)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn lte(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs <= rhs)),
-            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs as f64 <= rhs)),
-            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Bool(lhs <= rhs as f64)),
-            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Bool(lhs <= rhs)),
-            (Value::Bool(_), Value::Bool(_)) => Ok(Value::Bool(true)),
+            (Value::Integer(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs <= rhs)),
+            (Value::Integer(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs as f64 <= rhs)),
+            (Value::Float(lhs), Value::Integer(rhs)) => Ok(Value::Boolean(lhs <= rhs as f64)),
+            (Value::Float(lhs), Value::Float(rhs)) => Ok(Value::Boolean(lhs <= rhs)),
+            (Value::Boolean(_), Value::Boolean(_)) => Ok(Value::Boolean(true)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn and(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Bool(lhs), Value::Bool(rhs)) => Ok(Value::Bool(lhs && rhs)),
+            (Value::Boolean(lhs), Value::Boolean(rhs)) => Ok(Value::Boolean(lhs && rhs)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn or(self, rhs: Value) -> Result<Value, Error> {
         match (self, rhs) {
-            (Value::Bool(lhs), Value::Bool(rhs)) => Ok(Value::Bool(lhs || rhs)),
+            (Value::Boolean(lhs), Value::Boolean(rhs)) => Ok(Value::Boolean(lhs || rhs)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
 
     fn not(self) -> Result<Value, Error> {
         match self {
-            Value::Bool(b) => Ok(Value::Bool(!b)),
+            Value::Boolean(b) => Ok(Value::Boolean(!b)),
             _ => Err(Error::OpIllegalOperate),
         }
     }
@@ -432,14 +432,14 @@ impl Ops for Value {
             (Value::Array(array), ele) => {
                 for item in &array {
                     if item == &ele {
-                        return Ok(Value::Bool(true));
+                        return Ok(Value::Boolean(true));
                     }
                 }
 
-                Ok(Value::Bool(false))
+                Ok(Value::Boolean(false))
             }
             (Value::Dictionary(map), Value::String(key)) => {
-                Ok(Value::Bool(map.get(key.as_ref()).is_some()))
+                Ok(Value::Boolean(map.get(key.as_str()).is_some()))
             }
             _ => Err(Error::OpIllegalOperate),
         }
@@ -455,7 +455,7 @@ impl Ops for Value {
                 }
             }
             (Value::Dictionary(map), Value::String(key)) => {
-                if let Some(value) = map.get(key.as_ref()) {
+                if let Some(value) = map.get(key.as_str()) {
                     Ok(value.clone())
                 } else {
                     Err(Error::EntryNotFound(key))

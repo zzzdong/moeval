@@ -2,67 +2,52 @@ use std::{any::Any, collections::HashMap, fmt, sync::Arc};
 
 use crate::Error;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Primitive {
-    Null,
-    Undefined,
-    Bool(bool),
-    Integer(i64),
-    Float(f64),
-    Char(char),
-    String(Arc<String>),
-}
-
-impl fmt::Display for Primitive {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Primitive::Null => write!(f, "null"),
-            Primitive::Undefined => write!(f, "undefined"),
-            Primitive::Bool(b) => write!(f, "{}", b),
-            Primitive::Integer(i) => write!(f, "{}", i),
-            Primitive::Float(ff) => write!(f, "{}", ff),
-            Primitive::Char(c) => write!(f, "'{}'", c),
-            Primitive::String(s) => write!(f, "\"{}\"", s),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum ValueKind {
     Null,
-    Bool,
+    Undefined,
+    Boolean,
     Integer,
     Float,
     String,
     Array,
     Dictionary,
+    Struct,
+    Dynamic,
+    Function,
 }
 
 #[derive(Clone, Debug)]
 pub enum Value {
     Null,
     Undefined,
-    Bool(bool),
+    Boolean(bool),
     Integer(i64),
     Float(f64),
     Char(char),
-    String(Arc<String>),
+    String(String),
     Array(Vec<Value>),
-    Dictionary(HashMap<Arc<String>, Value>),
+    Dictionary(HashMap<String, Value>),
+    Struct(Struct),
     Dynamic(Arc<dyn Object>),
     Function(Arc<dyn Function>),
 }
 
-impl From<Primitive> for Value {
-    fn from(value: Primitive) -> Self {
-        match value {
-            Primitive::Null => Self::Null,
-            Primitive::Undefined => Self::Undefined,
-            Primitive::Bool(value) => Self::Bool(value),
-            Primitive::Integer(value) => Self::Integer(value),
-            Primitive::Float(value) => Self::Float(value),
-            Primitive::Char(value) => Self::Char(value),
-            Primitive::String(value) => Self::String(value),
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::Undefined => write!(f, "undefined"),
+            Value::Boolean(value) => write!(f, "{}", value),
+            Value::Integer(value) => write!(f, "{}", value),
+            Value::Float(value) => write!(f, "{}", value),
+            Value::Char(value) => write!(f, "{}", value),
+            Value::String(value) => write!(f, "{}", value),
+            Value::Dynamic(value) => write!(f, "{}", value),
+            Value::Function(value) => write!(f, "{}", value),
+            _ => {
+                unimplemented!()
+            }
         }
     }
 }
@@ -78,7 +63,7 @@ impl<T: Into<Value>> From<Option<T>> for Value {
 
 impl From<bool> for Value {
     fn from(value: bool) -> Self {
-        Self::Bool(value)
+        Self::Boolean(value)
     }
 }
 
@@ -123,19 +108,13 @@ impl From<char> for Value {
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Self::String(Arc::new(value))
-    }
-}
-
-impl From<Arc<String>> for Value {
-    fn from(value: Arc<String>) -> Self {
         Self::String(value)
     }
 }
 
 impl From<&str> for Value {
     fn from(value: &str) -> Self {
-        Self::String(value.to_string().into())
+        Self::String(value.to_string())
     }
 }
 
@@ -143,7 +122,7 @@ impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,
-            (Self::Bool(lhs), Self::Bool(rhs)) => lhs == rhs,
+            (Self::Boolean(lhs), Self::Boolean(rhs)) => lhs == rhs,
             (Self::Integer(lhs), Self::Integer(rhs)) => lhs == rhs,
             (Self::Float(lhs), Self::Float(rhs)) => lhs == rhs,
             (Self::String(lhs), Self::String(rhs)) => lhs == rhs,
@@ -164,13 +143,18 @@ impl std::ops::Add for Value {
             (Self::Integer(lhs), Self::Float(rhs)) => Self::Float(lhs as f64 + rhs),
             (Self::Float(lhs), Self::Integer(rhs)) => Self::Float(lhs + rhs as f64),
             (Self::String(lhs), Self::String(rhs)) => {
-                let mut s = lhs.to_string();
+                let mut s = lhs.clone();
                 s.push_str(&rhs);
-                Self::String(Arc::new(s))
+                Self::String(s)
             }
             (lhs, rhs) => panic!("Cannot add {:?} and {:?}", lhs, rhs),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub properties: Vec<Value>,
 }
 
 pub trait Object: fmt::Display + fmt::Debug + Any + Sync + Send {

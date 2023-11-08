@@ -21,11 +21,11 @@ impl<'a> Eval<'a> {
                 let v = match lit {
                     LiteralExpression::Null => Value::Null,
                     LiteralExpression::Undefined => Value::Undefined,
-                    LiteralExpression::Boolean(b) => Value::Bool(b),
+                    LiteralExpression::Boolean(b) => Value::Boolean(b),
                     LiteralExpression::Integer(n) => Value::Integer(n),
                     LiteralExpression::Float(f) => Value::Float(f),
                     LiteralExpression::Char(c) => Value::Char(c),
-                    LiteralExpression::String(s) => Value::String(Arc::new(s)),
+                    LiteralExpression::String(s) => Value::String(s),
                 };
 
                 Ok(v)
@@ -62,7 +62,7 @@ impl<'a> Eval<'a> {
             Expression::Dictionary(DictionaryExpression { elements }) => {
                 let mut map = HashMap::new();
                 for kv in elements {
-                    map.insert(Arc::new(kv.key.to_string()), self.eval(*kv.value)?);
+                    map.insert(kv.key.name, self.eval(*kv.value)?);
                 }
                 Ok(Value::Dictionary(map))
             }
@@ -98,15 +98,23 @@ impl<'a> Eval<'a> {
                     BinaryOperation::And => lhs.and(rhs),
                     BinaryOperation::Or => lhs.or(rhs),
                     BinaryOperation::In => lhs.in_(rhs),
-                    BinaryOperation::Matches => {
-                        match (lhs, rhs) {
-                            (Value::String(lhs), Value::String(rhs)) => {
-                                // TODO: add regex match
-                                unimplemented!()
+                    BinaryOperation::Matches => match (lhs, rhs) {
+                        (Value::String(lhs), Value::String(rhs)) => {
+                            match regex::Regex::new(rhs.as_str()) {
+                                Ok(re) => {
+                                    println!("re: {:?}", re);
+                                    let ret = re.is_match(lhs.as_str());
+                                    Ok(Value::Boolean(ret))
+                                }
+                                Err(err) => Err(Error::Message(format!(
+                                    "invalid regex string: `{}`, {}",
+                                    rhs.as_str(),
+                                    err
+                                ))),
                             }
-                            _ => Err(Error::OpIllegalOperate),
                         }
-                    }
+                        _ => Err(Error::OpIllegalOperate),
+                    },
                     _ => {
                         unimplemented!()
                     }
@@ -154,7 +162,7 @@ impl<'a> Eval<'a> {
     fn load_member(&mut self, value: Value, name: &str) -> Result<Value, Error> {
         match value {
             Value::Dictionary(dict) => Ok(dict
-                .get(&Arc::new(name.to_string()))
+                .get(name)
                 .cloned()
                 .unwrap_or(Value::Undefined)),
             Value::Dynamic(obj) => obj.get_field(name).map(|v| v.unwrap_or(Value::Undefined)),
@@ -165,7 +173,7 @@ impl<'a> Eval<'a> {
     fn call_method(&mut self, value: Value, name: &str, args: Vec<Value>) -> Result<Value, Error> {
         match value {
             Value::Dictionary(dict) => Ok(dict
-                .get(&Arc::new(name.to_string()))
+                .get(name)
                 .cloned()
                 .unwrap_or(Value::Undefined)),
             Value::Dynamic(obj) => obj
