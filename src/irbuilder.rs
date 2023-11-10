@@ -1,11 +1,7 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    fmt,
-    sync::Arc,
-};
+use std::{fmt, collections::{BTreeMap, HashMap}};
 
-use crate::value::Value;
-use crate::{ast::*, instruction::Opcode};
+use crate::ast::*;
+use crate::{value::Value, opcode::Opcode};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ValueData {
@@ -16,15 +12,15 @@ pub(crate) enum ValueData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct IRValue(usize);
+pub struct ValueRef(pub usize);
 
-impl IRValue {
+impl ValueRef {
     fn new(idx: usize) -> Self {
-        IRValue(idx)
+        ValueRef(idx)
     }
 }
 
-impl fmt::Display for IRValue {
+impl fmt::Display for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -32,8 +28,8 @@ impl fmt::Display for IRValue {
 
 pub struct IRModule {
     pub(crate) instructions: Vec<Instruction>,
-    pub(crate) values: BTreeMap<IRValue, ValueData>,
-    pub(crate) variables: HashMap<String, IRValue>,
+    pub(crate) values: BTreeMap<ValueRef, ValueData>,
+    pub(crate) variables: BTreeMap<String, ValueRef>,
 }
 
 impl IRModule {
@@ -41,25 +37,25 @@ impl IRModule {
         IRModule {
             instructions: Vec::new(),
             values: BTreeMap::new(),
-            variables: HashMap::new(),
+            variables: BTreeMap::new(),
         }
     }
 
-    fn binop(&mut self, op: Opcode, lhs: IRValue, rhs: IRValue) -> IRValue {
+    fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Binary { op, lhs, rhs };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
     }
 
-    fn unaryop(&mut self, op: Opcode, value: IRValue) -> IRValue {
+    fn unaryop(&mut self, op: Opcode, value: ValueRef) -> ValueRef {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Unary { op, operand: value };
         self.instructions.push(Instruction::new(data, Some(result)));
         result
     }
 
-    fn fn_call(&mut self, func: IRValue, args: &[IRValue]) -> IRValue {
+    fn fn_call(&mut self, func: ValueRef, args: &[ValueRef]) -> ValueRef {
         let result = self.make_value(ValueData::Inst);
         let data = InstructionData::Call {
             func,
@@ -69,7 +65,7 @@ impl IRModule {
         result
     }
 
-    fn make_array(&mut self, elements: &[IRValue]) -> IRValue {
+    fn make_array(&mut self, elements: &[ValueRef]) -> ValueRef {
         let array = self.make_value(ValueData::Inst);
         let data = InstructionData::NewArray {
             size: self.make_constant(Value::Integer(elements.len() as i64)),
@@ -89,7 +85,7 @@ impl IRModule {
         array
     }
 
-    fn make_dictionary(&mut self, fields: &[(IRValue, IRValue)]) -> IRValue {
+    fn make_dictionary(&mut self, fields: &[(ValueRef, ValueRef)]) -> ValueRef {
         let dict = self.make_value(ValueData::Inst);
         let data = InstructionData::NewDictionary;
         self.instructions.push(Instruction::new(data, Some(dict)));
@@ -108,29 +104,29 @@ impl IRModule {
         dict
     }
 
-    fn make_constant(&mut self, value: Value) -> IRValue {
+    fn make_constant(&mut self, value: Value) -> ValueRef {
         let idx = self.values.len();
         self.values
-            .insert(IRValue::new(idx), ValueData::Constant(value));
-        IRValue::new(idx)
+            .insert(ValueRef::new(idx), ValueData::Constant(value));
+        ValueRef::new(idx)
     }
 
-    fn make_value(&mut self, value: ValueData) -> IRValue {
+    fn make_value(&mut self, value: ValueData) -> ValueRef {
         let idx = self.values.len();
-        self.values.insert(IRValue::new(idx), value);
-        IRValue::new(idx)
+        self.values.insert(ValueRef::new(idx), value);
+        ValueRef::new(idx)
     }
 
-    fn make_variable(&mut self, name: String, value: IRValue) -> IRValue {
+    fn make_variable(&mut self, name: String, value: ValueRef) -> ValueRef {
         self.variables.insert(name, value);
         value
     }
 
-    fn lookup_variable(&mut self, name: &str) -> Option<IRValue> {
+    fn lookup_variable(&mut self, name: &str) -> Option<ValueRef> {
         self.variables.get(name).cloned()
     }
 
-    fn load_env(&mut self, name: &str) -> IRValue {
+    fn load_env(&mut self, name: &str) -> ValueRef {
         let result = self.make_value(ValueData::Inst);
         let name = self.make_constant(Value::String(name.to_string()));
         let data = InstructionData::LoadEnv { name };
@@ -175,7 +171,7 @@ impl IRModule {
         }
     }
 
-    fn op_code(&self, op: &Opcode, operands: &[&IRValue]) -> String {
+    fn op_code(&self, op: &Opcode, operands: &[&ValueRef]) -> String {
         format!(
             "{:?} {}",
             op,
@@ -187,22 +183,26 @@ impl IRModule {
         )
     }
 
-    fn value_str(&self, value: &IRValue) -> String {
+    fn value_str(&self, value: &ValueRef) -> String {
         match self.values.get(value).unwrap() {
             ValueData::Constant(constant) => format!("{:?}", constant),
             ValueData::Inst => format!("%{}", value.0),
         }
+    }
+
+    pub fn value_data(&self, value: &ValueRef) -> &ValueData {
+        self.values.get(value).unwrap()
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct Instruction {
     pub data: InstructionData,
-    pub result: Option<IRValue>,
+    pub result: Option<ValueRef>,
 }
 
 impl Instruction {
-    fn new(data: InstructionData, result: Option<IRValue>) -> Self {
+    fn new(data: InstructionData, result: Option<ValueRef>) -> Self {
         Instruction { data, result }
     }
 }
@@ -211,35 +211,35 @@ impl Instruction {
 pub(crate) enum InstructionData {
     Binary {
         op: Opcode,
-        lhs: IRValue,
-        rhs: IRValue,
+        lhs: ValueRef,
+        rhs: ValueRef,
     },
     Unary {
         op: Opcode,
-        operand: IRValue,
+        operand: ValueRef,
     },
     LoadEnv {
-        name: IRValue,
+        name: ValueRef,
     },
     Call {
-        func: IRValue,
-        args: Vec<IRValue>,
+        func: ValueRef,
+        args: Vec<ValueRef>,
     },
     Return {
-        value: IRValue,
+        value: ValueRef,
     },
     NewArray {
-        size: IRValue,
+        size: ValueRef,
     },
     ArrayPush {
-        array: IRValue,
-        element: IRValue,
+        array: ValueRef,
+        element: ValueRef,
     },
     NewDictionary,
     DictionaryPut {
-        object: IRValue,
-        key: IRValue,
-        value: IRValue,
+        object: ValueRef,
+        key: ValueRef,
+        value: ValueRef,
     },
 }
 
@@ -261,7 +261,7 @@ impl IRBuilder {
         module
     }
 
-    fn compile_expr(&mut self, expr: Expression) -> IRValue {
+    fn compile_expr(&mut self, expr: Expression) -> ValueRef {
         match expr {
             Expression::BinaryOperation(BinaryOperationExpression { op, left, right }) => {
                 let op = Opcode::try_from(op).unwrap();
@@ -319,7 +319,7 @@ impl IRBuilder {
         }
     }
 
-    fn compile_binop(&mut self, op: Opcode, lhs: Expression, rhs: Expression) -> IRValue {
+    fn compile_binop(&mut self, op: Opcode, lhs: Expression, rhs: Expression) -> ValueRef {
         let lhs = self.compile_expr(lhs);
 
         match (op, rhs) {
@@ -334,7 +334,7 @@ impl IRBuilder {
         }
     }
 
-    fn compile_identfier(&mut self, ident: IdentifierExpression, maybe_var: bool) -> IRValue {
+    fn compile_identfier(&mut self, ident: IdentifierExpression, maybe_var: bool) -> ValueRef {
         if maybe_var {
             if let Some(var) = self.module.lookup_variable(&ident.name) {
                 return var;

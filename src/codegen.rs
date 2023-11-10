@@ -1,49 +1,243 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, BTreeMap};
+use std::collections::hash_map::Entry;
+use std::fmt;
 
-use crate::{
-    instruction::{Instruction, Module, Opcode, Operand},
-    instruction::{Register, StackSlot, VirtReg}, Value,
-};
+use crate::irbuilder::{IRModule, InstructionData, ValueData, ValueRef};
+use crate::opcode::Opcode;
+use crate::Value;
 
-use super::ModuleRewriter;
+pub struct CodeGen {}
 
-pub struct VirtRegRewriter {
-    regalloc: RegisterAllocator,
+impl CodeGen {
+    pub fn new() -> CodeGen {
+        CodeGen {}
+    }
+
+    pub fn gen(&mut self, ir: IRModule) -> CodeUnit {
+        let mut unit = CodeUnit::new();
+    }
+
+    fn gen_ir_code(&mut self, ir: IRModule) -> CodeUnit {
+        let mut unit = CodeUnit::new();
+
+        for inst in ir.instructions.iter() {
+            match inst.data {
+                InstructionData::Binary { op, lhs, rhs } => {
+                    let operand1 = self.gen_ir_operand(&ir, lhs);
+                    let operand2 = self.gen_ir_operand(&ir, rhs);
+                    let dest = self.gen_ir_operand(&ir, inst.result.unwrap());
+                    unit.add_inst(VmCode::Triple {
+                        opcode: op,
+                        dest,
+                        operand1,
+                        operand2,
+                    });
+                }
+                InstructionData::Unary { op, operand } => {
+                    let dest = self.gen_ir_operand(&ir, inst.result.unwrap());
+                    let operand = self.gen_ir_operand(&ir, operand);
+                    unit.add_inst(VmCode::Double {
+                        opcode: op,
+                        dest,
+                        operand,
+                    });
+                }
+                InstructionData::NewArray { size } => {
+                    let dest = self.gen_ir_operand(&ir, inst.result.unwrap());
+                    let operand = self.gen_ir_operand(&ir, size);
+                    unit.add_inst(VmCode::Double {
+                        opcode: Opcode::NewArray,
+                        dest,
+                        operand,
+                    });
+                }
+                InstructionData::ArrayPush { array, element } => {
+                    let dest = self.gen_ir_operand(&ir, array);
+                    let operand = self.gen_ir_operand(&ir, element);
+                    unit.add_inst(VmCode::Double {
+                        opcode: Opcode::ArrayPush,
+                        dest,
+                        operand,
+                    });
+                }
+                InstructionData::NewDictionary => {
+                    let operand = self.gen_ir_operand(&ir, inst.result.unwrap());
+                    unit.add_inst(VmCode::Single {
+                        opcode: Opcode::NewDictionary,
+                        dest: operand,
+                    });
+                }
+                InstructionData::DictionaryPut { object, key, value } => {
+                    let dest = self.gen_ir_operand(&ir, object);
+                    let operand1 = self.gen_ir_operand(&ir, key);
+                    let operand2 = self.gen_ir_operand(&ir, value);
+                    unit.add_inst(VmCode::Triple {
+                        opcode: Opcode::DictionaryPut,
+                        dest,
+                        operand1,
+                        operand2,
+                    });
+                }
+                InstructionData::LoadEnv { name } => {
+                    let dest = self.gen_ir_operand(&ir, inst.result.unwrap());
+                    let operand = self.gen_ir_operand(&ir, name);
+                    unit.add_inst(VmCode::Double { opcode: Opcode::LoadEnv, dest, operand })
+                }
+                InstructionData::Call { func, args } => {
+                    unimplemented!()
+                }
+                InstructionData::Return { value } => {
+                    unimplemented!()
+                }
+            }
+        }
+
+        unit
+    }
+
+    fn gen_ir_operand(&self, ir: &IRModule, value: ValueRef) -> Operand {
+        match ir.value_data(&value) {
+            ValueData::Constant(v) => Operand::Immed(v.clone()),
+            ValueData::Inst => Operand::VirtReg(VirtReg(value.0)),
+        }
+    }
 }
 
-impl VirtRegRewriter {
-    pub fn new(registers: &[Register]) -> VirtRegRewriter {
-        VirtRegRewriter {
-            regalloc: RegisterAllocator::new(registers),
+enum Operand {
+    Heap(usize),
+    Stack(usize),
+    Register(Register),
+    Immed(Value),
+    VirtReg(VirtReg),
+}
+
+pub enum VmCode {
+    Single {
+        opcode: Opcode,
+        dest: Operand,
+    },
+    Double {
+        opcode: Opcode,
+        dest: Operand,
+        operand: Operand,
+    },
+    Triple {
+        opcode: Opcode,
+        dest: Operand,
+        operand1: Operand,
+        operand2: Operand,
+    },
+}
+
+pub struct CodeUnit {
+    pub codes: Vec<VmCode>,
+    pub consts: Vec<Value>,
+}
+
+impl CodeUnit {
+    pub fn new() -> CodeUnit {
+        CodeUnit {
+            codes: Vec::new(),
+            consts: Vec::new(),
         }
     }
 
-    pub fn rewrite(&mut self, input: Module) -> Module {
-        let mut output = Module::new();
-
-        let virt_reg_map = self.regalloc.line_scan(&input);
-
-        // alloc stack space
-        let stack_size = virt_reg_map.allocated_stack_size();
-        if stack_size > 0 {
-            output.push(Instruction::single(
-                Opcode::StackAlloc,
-                Operand::Immed(Value::Integer(stack_size as i64)),
-            ));
-        }
-
-        // rewrite virtual register
-        for inst in input.into_iter() {
-            output.extend(virt_reg_map.rewrite(inst));
-        }
-
-        output
+    pub fn add_inst(&mut self, code: VmCode) {
+        self.codes.push(code);
     }
 }
 
-impl ModuleRewriter for VirtRegRewriter {
-    fn rewrite(&mut self, module: Module) -> Module {
-        VirtRegRewriter::rewrite(self, module)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct VirtReg(pub usize);
+
+impl fmt::Display for VirtReg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "v{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Register {
+    R0 = 0,
+    R1 = 1,
+    R2 = 2,
+    R3 = 3,
+    R4 = 4,
+    R5 = 5,
+    R6 = 6,
+    R7 = 7,
+    R8 = 8,
+    R9 = 9,
+    R10 = 10,
+    R11 = 11,
+    R12 = 12,
+    Rbp = 13,
+    Rsp = 14,
+    Rpc = 15,
+}
+
+impl Register {
+    pub fn registers() -> [Register; 8] {
+        [
+            Register::R0,
+            Register::R1,
+            Register::R2,
+            Register::R3,
+            Register::R4,
+            Register::R5,
+            Register::R6,
+            Register::R7,
+        ]
+    }
+
+    pub fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
+impl fmt::Display for Register {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Register::R0 => write!(f, "R0"),
+            Register::R1 => write!(f, "R1"),
+            Register::R2 => write!(f, "R2"),
+            Register::R3 => write!(f, "R3"),
+            Register::R4 => write!(f, "R4"),
+            Register::R5 => write!(f, "R5"),
+            Register::R6 => write!(f, "R6"),
+            Register::R7 => write!(f, "R7"),
+            Register::R8 => write!(f, "R8"),
+            Register::R9 => write!(f, "R9"),
+            Register::R10 => write!(f, "R10"),
+            Register::R11 => write!(f, "R11"),
+            Register::R12 => write!(f, "R12"),
+            Register::Rbp => write!(f, "Rbp"),
+            Register::Rsp => write!(f, "Rsp"),
+            Register::Rpc => write!(f, "Rpc"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StackSlot {
+    pub offset: usize,
+    pub size: usize,
+}
+
+impl StackSlot {
+    pub fn new(offset: usize, size: usize) -> StackSlot {
+        StackSlot { offset, size }
+    }
+
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+}
+
+impl fmt::Display for StackSlot {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "rbp+{}", self.offset)
     }
 }
 
@@ -245,7 +439,7 @@ impl VirtRegMap {
 
 #[derive(Debug)]
 struct RegisterAllocator {
-    live_intervals: HashMap<VirtReg, LiveInterval>,
+    live_intervals: BTreeMap<VirtReg, LiveInterval>,
     active_intervals: Vec<LiveInterval>,
     registers: RegisterPool,
     stack: StackFrame,
@@ -254,15 +448,15 @@ struct RegisterAllocator {
 impl RegisterAllocator {
     pub fn new(registers: &[Register]) -> Self {
         Self {
-            live_intervals: HashMap::new(),
+            live_intervals: BTreeMap::new(),
             active_intervals: Vec::new(),
             registers: RegisterPool::new(registers),
             stack: StackFrame::new(),
         }
     }
 
-    pub fn line_scan(&mut self, instructions: &Module) -> VirtRegMap {
-        self.build_live_interval(instructions);
+    pub fn line_scan(&mut self, ir: &CodeUnit) -> VirtRegMap {
+        self.build_live_interval(ir);
 
         let mut live_intervals = self.get_live_intervals();
 
@@ -280,8 +474,8 @@ impl RegisterAllocator {
         VirtRegMap::new(live_intervals)
     }
 
-    fn build_live_interval(&mut self, instructions: &Module) {
-        for (idx, ir) in instructions.iter().enumerate() {
+    fn build_live_interval(&mut self, ir: &CodeUnit) {
+        for (idx, ir) in ir.instructions.iter().enumerate() {
             if let Operand::VirtReg(var) = ir.operand0 {
                 self.update_live_interval(var, idx);
             }

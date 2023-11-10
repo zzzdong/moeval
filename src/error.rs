@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use crate::{instruction::Opcode, parser::ParseError};
+use crate::{opcode::Opcode, parser::ParseError};
 
 #[derive(Debug)]
 pub enum Error {
@@ -12,6 +10,7 @@ pub enum Error {
     IndexOutOfBounds(usize, usize),
     EntryNotFound(String),
     Message(String),
+    RegexError(regex::Error),
 }
 
 impl std::fmt::Display for Error {
@@ -25,6 +24,7 @@ impl std::fmt::Display for Error {
             Error::IndexOutOfBounds(i, l) => write!(f, "Index out of bounds: {} of {}", i, l),
             Error::EntryNotFound(v) => write!(f, "Entry not found: {}", v),
             Error::Message(m) => write!(f, "{}", m),
+            Error::RegexError(e) => write!(f, "Regex error: {:?}", e),
         }
     }
 }
