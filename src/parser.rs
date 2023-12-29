@@ -42,6 +42,18 @@ type Result<T> = std::result::Result<T, ParseError>;
 #[grammar = "grammar.pest"]
 struct PestParser;
 
+pub fn parse_file(input: &str) -> Result<Program> {
+    let mut pairs = PestParser::parse(Rule::program, input)?;
+
+    let pair = pairs.next().unwrap();
+    parse_program(pair)
+}
+
+pub fn parse_expression_input(input: &str) -> Result<Expression> {
+    let mut pairs = PestParser::parse(Rule::expression, input)?;
+    parse_expression_pairs(pairs)
+}
+
 static PRATT_PARSER: OnceLock<PrattParser<Rule>> = OnceLock::new();
 
 fn pratt_parser() -> &'static PrattParser<Rule> {
@@ -384,11 +396,11 @@ fn parse_type_expression(pair: Pair<Rule>) -> TypeExpression {
 fn parse_expression(pair: Pair<Rule>) -> Result<Expression> {
     let pairs = pair.into_inner();
 
-    parse_expression_inner(pairs, pratt_parser())
+    parse_expression_pairs(pairs)
 }
 
-fn parse_expression_inner(pairs: Pairs<Rule>, pratt: &PrattParser<Rule>) -> Result<Expression> {
-    pratt
+fn parse_expression_pairs(pairs: Pairs<Rule>) -> Result<Expression> {
+    pratt_parser()
         .map_primary(parse_primary)
         .map_prefix(|op, rhs| {
             Ok(Expression::Prefix(
@@ -590,7 +602,7 @@ a(a, b, c);
     fn test_expr() {
         let input = "1 + 2 * 3 + c + d.e.f.g";
         let pairs = PestParser::parse(Rule::expression, input).unwrap();
-        let expr = parse_expression_inner(pairs, pratt_parser());
+        let expr = parse_expression_pairs(pairs);
         println!("=> {:?}", expr);
     }
 
