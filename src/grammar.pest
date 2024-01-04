@@ -198,13 +198,13 @@ infix_operator = _{
   | less_operator
   | greater_operator
   | assign_operator
-  | dot_operator
 }
 
 /// Possible modifiers for a rule.
 postfix = _{
     try_operator
   | await
+  | member_operator
   | call_operator
   | slice_operator
   | index_operator
@@ -212,6 +212,9 @@ postfix = _{
 
 /// Await Expression
 await = @{ ".await" }
+
+/// Member Expression
+member_operator = { "." ~ identifier }
 
 /// Call Expression
 call_operator = { "(" ~ call_arg_list ~ ")" }

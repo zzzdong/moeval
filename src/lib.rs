@@ -1,5 +1,5 @@
 mod ast;
-mod codegen;
+mod irbuilder;
 mod compiler;
 mod instruction;
 mod parser;

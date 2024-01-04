@@ -86,7 +86,8 @@ fn pratt_parser() -> &'static PrattParser<Rule> {
             .op(Op::postfix(Rule::try_operator))
             .op(Op::infix(Rule::as_operator, Assoc::Left))
             .op(Op::infix(Rule::dot_operator, Assoc::Left))
-            .op(Op::postfix(Rule::call_operator)
+            .op(Op::postfix(Rule::member_operator)
+                | Op::postfix(Rule::call_operator)
                 | Op::postfix(Rule::index_operator)
                 | Op::postfix(Rule::slice_operator))
             .op(Op::infix(Rule::path_operator, Assoc::Left))
@@ -409,13 +410,7 @@ fn parse_expression_pairs(pairs: Pairs<Rule>) -> Result<Expression> {
             ))
         })
         .map_postfix(parse_postfix)
-        .map_infix(|lhs, op, rhs| {
-            Ok(Expression::Binary(
-                op.as_str().parse::<BinOp>().unwrap(),
-                Box::new(lhs?),
-                Box::new(rhs?),
-            ))
-        })
+        .map_infix(parse_infix)
         .parse(pairs)
 }
 
@@ -428,19 +423,45 @@ fn parse_primary(pair: Pair<Rule>) -> Result<Expression> {
     }
 }
 
+fn parse_infix(
+    lhs: Result<Expression>,
+    op: Pair<Rule>,
+    rhs: Result<Expression>,
+) -> Result<Expression> {
+    match op.as_rule() {
+        Rule::assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+            });
+            Ok(expr)
+        }
+        _ => Ok(Expression::Binary(
+            op.as_str().parse::<BinOp>().unwrap(),
+            Box::new(lhs?),
+            Box::new(rhs?),
+        )),
+    }
+}
+
 fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> {
-    let target = Box::new(lhs?);
+    let object = Box::new(lhs?);
 
     match op.as_rule() {
         Rule::try_operator => {
-            let expr = Expression::Try(target);
+            let expr = Expression::Try(object);
             Ok(expr)
+        }
+        Rule::member_operator => {
+            let property = op.into_inner().next().unwrap().as_str().to_string();
+            let expr = MemberExpression { object, property };
+            Ok(Expression::Member(expr))
         }
         Rule::call_operator => {
             let args = op.into_inner().next().unwrap();
             let args: Result<Vec<Expression>> = args.into_inner().map(parse_expression).collect();
             let expr = CallExpression {
-                target,
+                func: object,
                 args: args?,
             };
 
@@ -451,7 +472,7 @@ fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> 
             let index = parse_expression(index.into_inner().next().unwrap())?;
 
             let expr = IndexExpression {
-                target,
+                object,
                 index: Box::new(index),
             };
 
@@ -477,7 +498,7 @@ fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> 
                 }
             }
 
-            let expr = SliceExpression { target, begin, end };
+            let expr = SliceExpression { object, begin, end };
 
             Ok(Expression::Slice(expr))
         }
@@ -493,8 +514,27 @@ fn parse_atom(pair: Pair<Rule>) -> Result<Expression> {
         Rule::literal => parse_literal(atom).map(Expression::Literal),
         Rule::tuple => parse_tuple(atom).map(Expression::Tuple),
         Rule::array => parse_array(atom).map(Expression::Array),
+        Rule::closure => parse_closure(atom).map(Expression::Closure),
         _ => unreachable!("unknown atom: {:?}", atom),
     }
+}
+
+fn parse_closure(pair: Pair<Rule>) -> Result<ClosureExpression> {
+    let mut pairs = pair.into_inner();
+
+    let mut params = pairs.next().unwrap().into_inner();
+    let params = if let Some(params) = params.next() {
+        params
+            .into_inner()
+            .map(|param| parse_function_param(param))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let body = parse_block(pairs.next().unwrap())?;
+
+    Ok(ClosureExpression { params, body })
 }
 
 fn parse_identifier(pair: Pair<Rule>) -> Result<IdentifierExpression> {

@@ -1,7 +1,7 @@
 
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Boolean(bool),
     Byte(u8),

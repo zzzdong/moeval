@@ -135,6 +135,9 @@ pub enum Expression {
     Identifier(IdentifierExpression),
     Tuple(TupleExpression),
     Array(ArrayExpression),
+    Closure(ClosureExpression),
+    Member(MemberExpression),
+    Assign(AssignExpression),
     Call(CallExpression),
     Index(IndexExpression),
     Slice(SliceExpression),
@@ -142,20 +145,38 @@ pub enum Expression {
 }
 
 #[derive(Debug)]
+pub struct ClosureExpression {
+    pub params: Vec<FunctionParam>,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug)]
+pub struct AssignExpression {
+    pub object: Box<Expression>,
+    pub value: Box<Expression>,
+}
+
+#[derive(Debug)]
+pub struct MemberExpression {
+    pub object: Box<Expression>,
+    pub property: String,
+}
+
+#[derive(Debug)]
 pub struct CallExpression {
-    pub target: Box<Expression>,
+    pub func: Box<Expression>,
     pub args: Vec<Expression>,
 }
 
 #[derive(Debug)]
 pub struct IndexExpression {
-    pub target: Box<Expression>,
+    pub object: Box<Expression>,
     pub index: Box<Expression>,
 }
 
 #[derive(Debug)]
 pub struct SliceExpression {
-    pub target: Box<Expression>,
+    pub object: Box<Expression>,
     pub begin: Option<Box<Expression>>,
     pub end: Option<Box<Expression>>,
 }
@@ -168,7 +189,7 @@ pub enum Pattern {
     Tuple(Vec<Pattern>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinOp {
     Add,
     Sub,
@@ -185,7 +206,6 @@ pub enum BinOp {
     NotEqual,
     As,
     Range,
-    Dot,
     Path,
     Assign,
     AddAssign,
@@ -213,7 +233,6 @@ impl fmt::Display for BinOp {
             BinOp::NotEqual => write!(f, "!="),
             BinOp::As => write!(f, "as"),
             BinOp::Range => write!(f, "..="),
-            BinOp::Dot => write!(f, "."),
             BinOp::Path => write!(f, "::"),
             BinOp::Assign => write!(f, "="),
             BinOp::AddAssign => write!(f, "+="),
@@ -245,7 +264,6 @@ impl FromStr for BinOp {
             "!=" => Ok(BinOp::NotEqual),
             "as" => Ok(BinOp::As),
             "..=" => Ok(BinOp::Range),
-            "." => Ok(BinOp::Dot),
             "=" => Ok(BinOp::Assign),
             "+=" => Ok(BinOp::AddAssign),
             "-=" => Ok(BinOp::SubAssign),
@@ -285,7 +303,7 @@ impl FromStr for PrefixOp {
 #[derive(Debug, PartialEq)]
 pub struct IdentifierExpression(pub String);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralExpression {
     Boolean(bool),
     Integer(i64),
