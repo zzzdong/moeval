@@ -1,6 +1,3 @@
-
-
-
 #[derive(Debug, Clone)]
 pub enum Value {
     Boolean(bool),
@@ -10,4 +7,3 @@ pub enum Value {
     Char(char),
     String(String),
 }
-

@@ -28,15 +28,15 @@ pub struct Compiler {}
 impl Compiler {
     pub fn compile(input: &str) -> Result<(), CompileError> {
         // 解析输入
-        let ast = crate::parser::parse_expression_input(input)?;
+        let ast = crate::parser::parse_file(input)?;
         println!("{:#?}", ast);
         // // 语义分析
         // let ast = crate::semantics::analyze(ast)?;
 
         // 生成代码
-        let mut generator = crate::irbuilder::IRBuilder::new();
-        let retval = generator.build_expression(ast);
-        generator.debug_instructions();
+        let mut builder = crate::irbuilder::IRBuilder::new();
+        let retval = builder.build(ast);
+        builder.debug_instructions();
 
         // 输出代码
         // println!("{}", code);
@@ -57,6 +57,6 @@ mod test {
 
         Compiler::compile("a.c = b.c(1,1)").unwrap();
 
-        // Compiler::compile("all(Tweets, |x|{return x.Len <= 240;})").unwrap();
+        Compiler::compile("all(Tweets, |x|{return x.Len <= 240;})").unwrap();
     }
 }
