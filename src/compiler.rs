@@ -1,4 +1,4 @@
-use crate::parser::ParseError;
+use crate::{codegen::Codegen, instruction::Module, irbuilder::IRBuilder, parser::ParseError};
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -34,9 +34,11 @@ impl Compiler {
         // let ast = crate::semantics::analyze(ast)?;
 
         // 生成代码
-        let mut builder = crate::irbuilder::IRBuilder::new();
-        let retval = builder.build(ast);
-        builder.debug_instructions();
+        let mut module = Module::new();
+        let mut ir_builder = IRBuilder::new(&mut module);
+        let mut codegen = Codegen::new(ir_builder);
+        let mut builder = codegen.compile(ast);
+        module.debug();
 
         // 输出代码
         // println!("{}", code);
@@ -58,5 +60,28 @@ mod test {
         Compiler::compile("a.c = b.c(1,1)").unwrap();
 
         Compiler::compile("all(Tweets, |x|{return x.Len <= 240;})").unwrap();
+
+        let input = r#"
+let cc = 100;
+fn fib(n: int) -> int {
+    if n <= 1 {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+fib(10);
+let a = 1;
+let b = 2;
+if a > 0 {
+    a -= 1;
+} else {
+    a += 1;
+}
+
+let c = b + a;
+c += cc;
+"#;
+        Compiler::compile(input).unwrap();
     }
 }

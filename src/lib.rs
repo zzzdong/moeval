@@ -1,4 +1,5 @@
 mod ast;
+mod codegen;
 mod compiler;
 mod instruction;
 mod irbuilder;

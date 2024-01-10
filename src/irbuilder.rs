@@ -1,235 +1,139 @@
-use std::collections::BTreeMap;
-
-use crate::ast::*;
 use crate::instruction::*;
-use crate::value::Value;
 
-pub struct IRBuilder {
-    module: Module,
-    symbol_table: SymbolTable,
+pub struct IRBuilder<'a> {
+    module: &'a mut Module,
+    current_block: Option<BlockId>,
 }
 
-impl IRBuilder {
-    pub fn new() -> Self {
+impl<'a> IRBuilder<'a> {
+    pub fn new(module: &'a mut Module) -> Self {
         Self {
-            module: Module::new(),
-            symbol_table: SymbolTable::new(),
+            module,
+            current_block: None,
         }
     }
 
-    pub fn build(&mut self, ast: Program) {
-        let main_block = self.module.create_block(Some("main"));
-
-        let builder = self.module.switch_to_block(main_block);
-
-        for item in ast.items {
-            self.build_toplevel(item);
-        }
+    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
+        self.module.make_constant(value)
     }
 
-    fn build_toplevel(&mut self, toplevel: TopLevelItem) {
-        match toplevel {
-            TopLevelItem::Expression(expr) => {
-                self.build_expression(expr);
-            }
-            TopLevelItem::Statement(stmt) => {
-                self.build_statement(stmt);
-            }
-        }
+    pub fn make_inst_value(&mut self) -> ValueRef {
+        self.module.make_inst_value()
     }
 
-    fn build_statement(&mut self, statement: Statement) {
-        match statement {
-            Statement::Expression(expression) => {
-                self.build_expression(expression);
-            }
-            Statement::Return(ReturnStatement { value }) => {
-                let value = value.map(|expr| self.build_expression(expr));
-                self.module.ins().return_(value);
-            }
-            _ => unimplemented!("{:?}", statement),
-        }
+    pub fn create_function(&mut self, name: Option<impl ToString>, entry: BlockId) -> ValueRef {
+        self.module.create_function(name, entry)
     }
 
-    pub fn build_expression(&mut self, expr: Expression) -> ValueRef {
-        match expr {
-            Expression::Literal(literal) => self.build_literal(literal),
-            Expression::Identifier(identifier) => self.build_identifier(identifier),
-            Expression::Binary(op, lhs, rhs) => self.build_binary(op, *lhs, *rhs),
-            Expression::Member(member) => self.build_get_property(member),
-            Expression::Call(call) => self.build_call(call),
-            Expression::Assign(assign) => self.build_assign(assign),
-            Expression::Closure(closure) => self.build_closure(closure),
-            _ => unimplemented!("{:?}", expr),
-        }
+    pub fn create_block(&mut self, label: Option<impl ToString>) -> BlockId {
+        self.module.create_block(label)
     }
 
-    fn build_get_property(&mut self, expr: MemberExpression) -> ValueRef {
-        let MemberExpression { object, property } = expr;
-
-        let object = self.build_expression(*object);
-
-        self.module.ins().get_property(object, &property)
+    pub fn set_entry_block(&mut self, block: BlockId) {
+        self.module.set_entry_block(block);
     }
 
-    fn build_set_property(&mut self, expr: MemberExpression, value: ValueRef) {
-        let MemberExpression { object, property } = expr;
-
-        let object = self.build_expression(*object);
-
-        self.module.ins().set_property(object, &property, value)
+    pub fn switch_to_block(&mut self, block: BlockId) {
+        self.current_block = Some(block);
     }
 
-    fn build_call(&mut self, expr: CallExpression) -> ValueRef {
-        let CallExpression { func, args } = expr;
-
-        let args: Vec<ValueRef> = args
-            .into_iter()
-            .map(|arg| self.build_expression(arg))
-            .collect();
-
-        match *func {
-            Expression::Member(member) => {
-                let MemberExpression { object, property } = member;
-
-                let object = self.build_expression(*object);
-
-                self.module.ins().call_property(object, property, args)
-            }
-            _ => {
-                let func = self.build_expression(*func);
-
-                self.module.ins().make_call(func, args)
-            }
-        }
+    pub fn cfg(&mut self) -> &mut ControlFlowGraph {
+        self.module.cfg_mut()
     }
 
-    fn build_assign(&mut self, expr: AssignExpression) -> ValueRef {
-        let AssignExpression { object, value } = expr;
-
-        match *object {
-            Expression::Member(member) => {
-                let value = self.build_expression(*value);
-                self.build_set_property(member, value);
-                value
-            }
-            _ => {
-                let object = self.build_expression(*object);
-                let value = self.build_expression(*value);
-
-                self.module.ins().assign(object, value);
-                value
-            }
-        }
+    pub fn current_block(&self) -> BlockId {
+        self.current_block.unwrap()
     }
 
-    fn build_closure(&mut self, expr: ClosureExpression) -> ValueRef {
-        let ClosureExpression { params, body } = expr;
-
-        let old_block = self.module.current_block();
-        self.symbol_table.enter_scope();
-
-        let closure_block = self.module.create_block(None::<&str>);
-        let func = self.module.ins().make_function(closure_block);
-        self.module.switch_to_block(closure_block);
-
-        for (idx, param) in params.into_iter().enumerate() {
-            let value = self.module.ins().load_argument(idx);
-            self.symbol_table.define(param.name, value);
-        }
-
-        for stmt in body.into_iter() {
-            self.build_statement(stmt);
-        }
-
-        self.module.switch_to_block(old_block.unwrap());
-        self.symbol_table.leave_scope();
-
-        func
+    pub fn current_block_mut(&mut self) -> &mut Block {
+        self.module.block_mut(self.current_block.unwrap())
     }
 
-    fn build_literal(&mut self, literal: LiteralExpression) -> ValueRef {
-        let value = match literal {
-            LiteralExpression::Boolean(b) => Value::Boolean(b),
-            LiteralExpression::Integer(i) => Value::Integer(i),
-            LiteralExpression::Float(f) => Value::Float(f),
-            LiteralExpression::Char(c) => Value::Char(c),
-            LiteralExpression::String(s) => Value::String(s),
-        };
+    pub fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
+        let result = self.make_inst_value();
 
-        self.module.ins().make_constant(value)
+        self.current_block_mut().emit(Instruction::BinaryOp {
+            op,
+            result,
+            lhs,
+            rhs,
+        });
+
+        result
     }
 
-    fn build_identifier(&mut self, identifier: IdentifierExpression) -> ValueRef {
-        match self.symbol_table.get(&identifier.0) {
-            Some(value) => value,
-            None => {
-                let value = self
-                    .module
-                    .ins()
-                    .load_external_variable(identifier.0.clone());
-                self.symbol_table.define(identifier.0, value);
-                value
-            }
-        }
+    pub fn assign(&mut self, object: ValueRef, value: ValueRef) {
+        self.current_block_mut()
+            .emit(Instruction::Assign { object, value })
     }
 
-    fn build_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> ValueRef {
-        let lhs = self.build_expression(lhs);
-        let rhs = self.build_expression(rhs);
+    pub fn get_property(&mut self, object: ValueRef, property: &str) -> ValueRef {
+        let result = self.make_inst_value();
 
-        match op {
-            BinOp::Add => self.module.ins().binop(Opcode::Add, lhs, rhs),
-            BinOp::Sub => self.module.ins().binop(Opcode::Sub, lhs, rhs),
-            BinOp::Mul => self.module.ins().binop(Opcode::Mul, lhs, rhs),
-            BinOp::Div => self.module.ins().binop(Opcode::Div, lhs, rhs),
-            BinOp::Mod => self.module.ins().binop(Opcode::Mod, lhs, rhs),
+        self.current_block_mut().emit(Instruction::PropertyGet {
+            result,
+            object,
+            property: property.to_string(),
+        });
 
-            BinOp::Equal => self.module.ins().binop(Opcode::Equal, lhs, rhs),
-            BinOp::NotEqual => self.module.ins().binop(Opcode::NotEqual, lhs, rhs),
-            BinOp::Greater => self.module.ins().binop(Opcode::Greater, lhs, rhs),
-            BinOp::GreaterEqual => self.module.ins().binop(Opcode::GreaterEqual, lhs, rhs),
-            BinOp::Less => self.module.ins().binop(Opcode::Less, lhs, rhs),
-            BinOp::LessEqual => self.module.ins().binop(Opcode::LessEqual, lhs, rhs),
-
-            _ => unimplemented!("{:?}", op),
-        }
+        result
     }
 
-    pub fn debug_instructions(&self) {
-        self.module.debug();
+    pub fn set_property(&mut self, object: ValueRef, property: &str, value: ValueRef) {
+        self.current_block_mut().emit(Instruction::PropertySet {
+            object,
+            property: property.to_string(),
+            value,
+        });
+    }
+
+    pub fn call_property(
+        &mut self,
+        object: ValueRef,
+        property: String,
+        args: Vec<ValueRef>,
+    ) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.current_block_mut().emit(Instruction::PropertyCall {
+            object,
+            property,
+            args,
+        });
+
+        result
+    }
+
+    pub fn load_external_variable(&mut self, name: String) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.current_block_mut()
+            .emit(Instruction::LoadEnv { result, name });
+
+        result
+    }
+
+    pub fn load_argument(&mut self, index: usize) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.current_block_mut()
+            .emit(Instruction::LoadArg { result, index });
+
+        result
+    }
+
+    pub fn make_call(&mut self, func: ValueRef, args: Vec<ValueRef>) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.current_block_mut()
+            .emit(Instruction::Call { result, func, args });
+
+        result
+    }
+
+    pub fn br_if(&mut self, cond: ValueRef, then_blk: BlockId, else_blk: Option<BlockId>) {}
+
+    pub fn return_(&mut self, value: Option<ValueRef>) {
+        self.current_block_mut().emit(Instruction::Return { value });
     }
 }
-
-#[derive(Debug)]
-struct SymbolTable {
-    scopes: Vec<BTreeMap<String, ValueRef>>,
-}
-
-impl SymbolTable {
-    fn new() -> Self {
-        SymbolTable {
-            scopes: vec![BTreeMap::new()],
-        }
-    }
-
-    fn get(&self, name: &str) -> Option<ValueRef> {
-        let last = self.scopes.last()?;
-        last.get(name).copied()
-    }
-
-    fn define(&mut self, name: String, value: ValueRef) {
-        let last = self.scopes.last_mut().unwrap();
-        last.insert(name, value);
-    }
-
-    fn enter_scope(&mut self) {
-        self.scopes.push(BTreeMap::new());
-    }
-
-    fn leave_scope(&mut self) {
-        self.scopes.pop();
-    }
-}
-
-struct Block {}

@@ -433,6 +433,47 @@ fn parse_infix(
             let expr = Expression::Assign(AssignExpression {
                 object: Box::new(lhs?),
                 value: Box::new(rhs?),
+                op: None,
+            });
+            Ok(expr)
+        }
+        Rule::add_assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+                op: Some(BinOp::Add),
+            });
+            Ok(expr)
+        }
+        Rule::sub_assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+                op: Some(BinOp::Sub),
+            });
+            Ok(expr)
+        }
+        Rule::mul_assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+                op: Some(BinOp::Mul),
+            });
+            Ok(expr)
+        }
+        Rule::div_assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+                op: Some(BinOp::Div),
+            });
+            Ok(expr)
+        }
+        Rule::mod_assign_operator => {
+            let expr = Expression::Assign(AssignExpression {
+                object: Box::new(lhs?),
+                value: Box::new(rhs?),
+                op: Some(BinOp::Mod),
             });
             Ok(expr)
         }

@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Program {
     pub items: Vec<TopLevelItem>,
 }
@@ -15,13 +15,13 @@ impl Program {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TopLevelItem {
     Statement(Statement),
     Expression(Expression),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Statement {
     Empty,
     Break,
@@ -36,38 +36,38 @@ pub enum Statement {
     Call(String, Vec<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ItemStatement {
     Enum(EnumItem),
     Struct(StructItem),
     Fn(FunctionItem),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnumItem {
     pub name: String,
     pub variants: Vec<EnumVariant>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum EnumVariant {
     Simple(String),
     Tuple(String, Vec<TypeExpression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructItem {
     pub name: String,
     pub fields: Vec<StructField>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructField {
     pub name: String,
     pub ty: TypeExpression,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionItem {
     pub name: String,
     pub params: Vec<FunctionParam>,
@@ -75,44 +75,44 @@ pub struct FunctionItem {
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionParam {
     pub name: String,
     pub ty: Option<TypeExpression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LetStatement {
     pub name: String,
     pub ty: Option<TypeExpression>,
     pub value: Option<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ForStatement {
     pub pat: Pattern,
     pub iterable: Expression,
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoopStatement {
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IfStatement {
     pub condition: Expression,
     pub then_branch: Vec<Statement>,
     pub else_branch: Option<Vec<Statement>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReturnStatement {
     pub value: Option<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeExpression {
     Boolean,
     Byte,
@@ -127,7 +127,7 @@ pub enum TypeExpression {
     Impl(Box<TypeExpression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Binary(BinOp, Box<Expression>, Box<Expression>),
     Prefix(PrefixOp, Box<Expression>),
@@ -144,44 +144,45 @@ pub enum Expression {
     Try(Box<Expression>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClosureExpression {
     pub params: Vec<FunctionParam>,
     pub body: Vec<Statement>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AssignExpression {
     pub object: Box<Expression>,
     pub value: Box<Expression>,
+    pub op: Option<BinOp>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MemberExpression {
     pub object: Box<Expression>,
     pub property: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CallExpression {
     pub func: Box<Expression>,
     pub args: Vec<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexExpression {
     pub object: Box<Expression>,
     pub index: Box<Expression>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SliceExpression {
     pub object: Box<Expression>,
     pub begin: Option<Box<Expression>>,
     pub end: Option<Box<Expression>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Pattern {
     Wildcard,
     Identifier(String),
@@ -279,7 +280,7 @@ impl FromStr for BinOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PrefixOp {
     Neg,
     Not,
@@ -300,7 +301,7 @@ impl FromStr for PrefixOp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IdentifierExpression(pub String);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -312,8 +313,8 @@ pub enum LiteralExpression {
     String(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TupleExpression(pub Vec<Expression>);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ArrayExpression(pub Vec<Expression>);
