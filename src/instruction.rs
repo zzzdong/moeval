@@ -9,7 +9,7 @@ pub enum ValueRef {
     /// Value from instruction
     Inst(usize),
     /// Function
-    Function(usize),
+    Function(FunctionId),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -68,108 +68,88 @@ pub enum Instruction {
         property: String,
         args: Vec<ValueRef>,
     },
-    Assign {
+    Store {
         object: ValueRef,
         value: ValueRef,
     },
     Return {
         value: Option<ValueRef>,
     },
+    BrIf {
+        condition: ValueRef,
+        then_blk: BlockId,
+        else_blk: Option<BlockId>,
+    },
+    Br {
+        target: BlockId,
+    },
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FunctionId(usize);
 
 #[derive(Debug)]
 pub struct Module {
-    constants: Vec<crate::value::Value>,
-    inst_values: Vec<ValueRef>,
+    pub(crate) dfg: DataFlowGraph,
     functions: Vec<Function>,
-    blocks: BTreeMap<BlockId, Block>,
-    cfg: ControlFlowGraph,
+    func_map: BTreeMap<String, FunctionId>,
 }
 
 impl Module {
     pub fn new() -> Self {
         Self {
-            constants: Vec::new(),
-            inst_values: Vec::new(),
+            dfg: DataFlowGraph::new(),
             functions: Vec::new(),
-            blocks: BTreeMap::new(),
-            cfg: ControlFlowGraph::new(),
+            func_map: BTreeMap::new(),
         }
     }
 
-    pub fn cfg_mut(&mut self) -> &mut ControlFlowGraph {
-        &mut self.cfg
-    }
+    pub fn add_function(&mut self, func: Function) -> FunctionId {
+        let id = FunctionId(self.functions.len());
 
-    pub fn create_block(&mut self, label: Option<impl ToString>) -> BlockId {
-        let id = BlockId(self.blocks.len());
-        let block = Block::new(label.map(|l| l.to_string()));
-        self.blocks.insert(id, block);
-        self.cfg.add_block(id);
+        if let Some(ref name) = &func.name {
+            if !name.is_empty() {
+                self.func_map.insert(name.to_string(), id);
+            }
+        }
+
+        self.functions.push(func);
         id
     }
 
-    pub fn block_mut(&mut self, id: BlockId) -> &mut Block {
-        self.blocks.get_mut(&id).unwrap()
+    pub fn data_flow_graph(&self) -> &DataFlowGraph {
+        &self.dfg
     }
 
-    pub fn set_entry_block(&mut self, block: BlockId) {
-        self.cfg.set_entry_block(block);
+    pub fn get_function(&self, id: FunctionId) -> &DataFlowGraph {
+        &self.functions[id.0].dfg
     }
 
-    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
-        let idx = self.constants.len();
-        self.constants.push(value);
-        ValueRef::Constant(idx)
-    }
 
-    pub fn make_inst_value(&mut self) -> ValueRef {
-        let idx = self.inst_values.len();
-        self.inst_values.push(ValueRef::Inst(idx));
-        ValueRef::Inst(idx)
-    }
-
-    pub fn create_function(&mut self, name: Option<impl ToString>, entry: BlockId) -> ValueRef {
-        let idx = self.functions.len();
-        self.functions.push(Function {
-            name: name.map(|n| n.to_string()),
-            entry,
-        });
-        ValueRef::Function(idx)
-    }
 
     pub fn debug(&self) {
-        println!("constants:");
-        for (i, c) in self.constants.iter().enumerate() {
-            println!("  {}: {:?}", i, c);
+        for (i, func) in self.functions.iter().enumerate() {
+            println!("Function{}({:?}):", i, func.name);
+            func.dfg.debug();
+            println!();
         }
-
-        // println!("functions:");
-        // for func in &self.functions {
-        //     println!("  {:?}", func.name);
-        //     func.debug();
-        // }
-
-        println!("instructions:");
-        let mut idx = 0;
-        for (id, blk) in self.blocks.iter() {
-            println!(
-                "  [{}]{}:",
-                id.0,
-                blk.label.as_ref().unwrap_or(&"".to_string())
-            );
-            for inst in &blk.instructions {
-                println!("    {} {:?}", idx, inst);
-            }
-            idx += 1;
-        }
+        self.dfg.debug();
     }
 }
 
 #[derive(Debug)]
 pub struct Function {
-    name: Option<String>,
-    entry: BlockId,
+    pub name: Option<String>,
+    pub dfg: DataFlowGraph,
+}
+
+impl Function {
+    pub fn new(name: impl Into<Option<String>>) -> Self {
+        Self {
+            name: name.into(),
+            dfg: DataFlowGraph::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -197,108 +177,81 @@ impl Block {
 }
 
 #[derive(Debug)]
-struct BlockNode {
-    prev: Option<BlockId>,
-    next: Option<BlockId>,
+pub struct DataFlowGraph {
+    pub constants: Vec<crate::value::Value>,
+    pub inst_values: Vec<ValueRef>,
+    pub blocks: Vec<Block>,
+    pub entry: Option<BlockId>,
+    current_block: Option<BlockId>,
 }
 
-#[derive(Debug)]
-struct Layout {
-    blocks: BTreeMap<BlockId, BlockNode>,
-}
-
-impl Layout {
+impl DataFlowGraph {
     pub fn new() -> Self {
         Self {
-            blocks: BTreeMap::new(),
+            constants: Vec::new(),
+            inst_values: Vec::new(),
+            blocks: Vec::new(),
+            entry: None,
+            current_block: None,
         }
     }
 
-    pub fn add_block(&mut self, block: BlockId) {
-        self.blocks.insert(
-            block,
-            BlockNode {
-                prev: None,
-                next: None,
-            },
-        );
+    pub fn create_block(&mut self, label: impl Into<Option<String>>) -> BlockId {
+        let id = self.blocks.len();
+        self.blocks.push(Block::new(label.into()));
+        BlockId(id)
     }
 
-    pub fn set_block_before(&mut self, block: BlockId, before: BlockId) {
-        let old = self.blocks[&before].prev;
+    pub fn entry(&self) -> Option<BlockId> {
+        self.entry
+    }
 
-        self.blocks.get_mut(&before).unwrap().prev = Some(block);
-        {
-            let blk = self.blocks.get_mut(&block).unwrap();
-            blk.next = Some(before);
-            blk.prev = old;
+    pub fn set_entry(&mut self, block: BlockId) {
+        self.entry = Some(block);
+    }
+
+    pub fn switch_to_block(&mut self, block: BlockId) {
+        self.current_block = Some(block);
+    }
+
+    pub fn emit(&mut self, instruction: Instruction) {
+        let block = self.current_block.expect("No current block");
+        self.blocks[block.0].emit(instruction);
+    }
+
+    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
+        let idx = self.constants.len();
+        self.constants.push(value);
+        ValueRef::Constant(idx)
+    }
+
+    pub fn make_inst_value(&mut self) -> ValueRef {
+        let idx = self.inst_values.len();
+        self.inst_values.push(ValueRef::Inst(idx));
+        ValueRef::Inst(idx)
+    }
+
+    pub fn instructions(&self, block: BlockId) -> &[Instruction] {
+        &self.blocks[block.0].instructions
+    }
+
+    pub fn debug(&self) {
+        println!("constants:",);
+        for (i, c) in self.constants.iter().enumerate() {
+            println!("  {}: {:?}", i, c);
         }
-
-        match old {
-            Some(id) => self.blocks.get_mut(&id).unwrap().next = Some(block),
-            None => {}
+        println!("inst_values:");
+        for (i, v) in self.inst_values.iter().enumerate() {
+            println!("  {}: {:?}", i, v);
         }
-    }
+        println!("blocks:");
 
-    pub fn set_block_after(&mut self, block: BlockId, after: BlockId) {
-        let old = self.blocks[&after].next;
-
-        self.blocks.get_mut(&after).unwrap().next = Some(block);
-        {
-            let blk = self.blocks.get_mut(&block).unwrap();
-            blk.prev = Some(after);
-            blk.next = old;
+        for (id, block) in self.blocks.iter().enumerate() {
+            println!("  {}:", id);
+            for (i, inst) in block.instructions.iter().enumerate() {
+                println!("    {}: {:?}", i, inst);
+            }
         }
-
-        match old {
-            Some(id) => self.blocks.get_mut(&id).unwrap().prev = Some(block),
-            None => {}
-        }
-    }
-
-    pub fn get_block_before(&self, block: BlockId) -> Option<BlockId> {
-        self.blocks[&block].prev
-    }
-
-    pub fn get_block_after(&self, block: BlockId) -> Option<BlockId> {
-        self.blocks[&block].next
-    }
-}
-
-#[derive(Debug)]
-pub struct ControlFlowGraph {
-    pub layout: Layout,
-    pub entry_block: Option<BlockId>,
-}
-
-impl ControlFlowGraph {
-    pub fn new() -> Self {
-        let layout = Layout::new();
-
-        Self {
-            layout,
-            entry_block: None,
-        }
-    }
-
-    pub fn add_block(&mut self, block: BlockId) {
-        self.layout.add_block(block);
-    }
-
-    pub fn entry_block(&self) -> Option<BlockId> {
-        self.entry_block
-    }
-
-    pub fn set_entry_block(&mut self, block: BlockId) {
-        self.entry_block = Some(block);
-    }
-
-    pub fn set_block_after(&mut self, block: BlockId, after: BlockId) {
-        self.layout.set_block_after(block, after);
-    }
-
-    pub fn set_block_before(&mut self, block: BlockId, before: BlockId) {
-        self.layout.set_block_before(block, before);
     }
 }
 

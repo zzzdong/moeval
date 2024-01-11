@@ -1,4 +1,4 @@
-use crate::{codegen::Codegen, instruction::Module, irbuilder::IRBuilder, parser::ParseError};
+use crate::{codegen::Codegen, instruction::Module, irbuilder::InstBuilder, parser::ParseError};
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -26,7 +26,7 @@ impl std::error::Error for CompileError {}
 pub struct Compiler {}
 
 impl Compiler {
-    pub fn compile(input: &str) -> Result<(), CompileError> {
+    pub fn compile(input: &str) -> Result<Module, CompileError> {
         // 解析输入
         let ast = crate::parser::parse_file(input)?;
         println!("{:#?}", ast);
@@ -34,16 +34,12 @@ impl Compiler {
         // let ast = crate::semantics::analyze(ast)?;
 
         // 生成代码
-        let mut module = Module::new();
-        let mut ir_builder = IRBuilder::new(&mut module);
-        let mut codegen = Codegen::new(ir_builder);
-        let mut builder = codegen.compile(ast);
-        module.debug();
+        let module = Codegen::new().compile(ast);
 
         // 输出代码
-        // println!("{}", code);
+        // module.debug();
 
-        Ok(())
+        Ok(module)
     }
 }
 
@@ -70,7 +66,7 @@ fn fib(n: int) -> int {
     return fib(n - 1) + fib(n - 2);
 }
 
-fib(10);
+let k = fib(10);
 let a = 1;
 let b = 2;
 if a > 0 {
@@ -81,6 +77,8 @@ if a > 0 {
 
 let c = b + a;
 c += cc;
+
+k + cc;
 "#;
         Compiler::compile(input).unwrap();
     }

@@ -1,58 +1,30 @@
 use crate::instruction::*;
 
-pub struct IRBuilder<'a> {
-    module: &'a mut Module,
-    current_block: Option<BlockId>,
-}
+pub trait InstBuilder {
+    fn data_flow_graph(&self) -> &DataFlowGraph;
 
-impl<'a> IRBuilder<'a> {
-    pub fn new(module: &'a mut Module) -> Self {
-        Self {
-            module,
-            current_block: None,
-        }
+    fn data_flow_graph_mut(&mut self) -> &mut DataFlowGraph;
+
+    fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
+        self.data_flow_graph_mut().make_constant(value)
     }
 
-    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
-        self.module.make_constant(value)
+    fn make_inst_value(&mut self) -> ValueRef {
+        self.data_flow_graph_mut().make_inst_value()
     }
 
-    pub fn make_inst_value(&mut self) -> ValueRef {
-        self.module.make_inst_value()
+    fn create_block(&mut self, label: impl Into<Option<String>>) -> BlockId {
+        self.data_flow_graph_mut().create_block(label)
     }
 
-    pub fn create_function(&mut self, name: Option<impl ToString>, entry: BlockId) -> ValueRef {
-        self.module.create_function(name, entry)
+    fn switch_to_block(&mut self, block: BlockId) {
+        self.data_flow_graph_mut().switch_to_block(block);
     }
 
-    pub fn create_block(&mut self, label: Option<impl ToString>) -> BlockId {
-        self.module.create_block(label)
-    }
+    fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
+        let result = self.data_flow_graph_mut().make_inst_value();
 
-    pub fn set_entry_block(&mut self, block: BlockId) {
-        self.module.set_entry_block(block);
-    }
-
-    pub fn switch_to_block(&mut self, block: BlockId) {
-        self.current_block = Some(block);
-    }
-
-    pub fn cfg(&mut self) -> &mut ControlFlowGraph {
-        self.module.cfg_mut()
-    }
-
-    pub fn current_block(&self) -> BlockId {
-        self.current_block.unwrap()
-    }
-
-    pub fn current_block_mut(&mut self) -> &mut Block {
-        self.module.block_mut(self.current_block.unwrap())
-    }
-
-    pub fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
-        let result = self.make_inst_value();
-
-        self.current_block_mut().emit(Instruction::BinaryOp {
+        self.data_flow_graph_mut().emit(Instruction::BinaryOp {
             op,
             result,
             lhs,
@@ -62,15 +34,15 @@ impl<'a> IRBuilder<'a> {
         result
     }
 
-    pub fn assign(&mut self, object: ValueRef, value: ValueRef) {
-        self.current_block_mut()
-            .emit(Instruction::Assign { object, value })
+    fn assign(&mut self, object: ValueRef, value: ValueRef) {
+        self.data_flow_graph_mut()
+            .emit(Instruction::Store { object, value })
     }
 
-    pub fn get_property(&mut self, object: ValueRef, property: &str) -> ValueRef {
+    fn get_property(&mut self, object: ValueRef, property: &str) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.current_block_mut().emit(Instruction::PropertyGet {
+        self.data_flow_graph_mut().emit(Instruction::PropertyGet {
             result,
             object,
             property: property.to_string(),
@@ -79,15 +51,15 @@ impl<'a> IRBuilder<'a> {
         result
     }
 
-    pub fn set_property(&mut self, object: ValueRef, property: &str, value: ValueRef) {
-        self.current_block_mut().emit(Instruction::PropertySet {
+    fn set_property(&mut self, object: ValueRef, property: &str, value: ValueRef) {
+        self.data_flow_graph_mut().emit(Instruction::PropertySet {
             object,
             property: property.to_string(),
             value,
         });
     }
 
-    pub fn call_property(
+    fn call_property(
         &mut self,
         object: ValueRef,
         property: String,
@@ -95,7 +67,7 @@ impl<'a> IRBuilder<'a> {
     ) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.current_block_mut().emit(Instruction::PropertyCall {
+        self.data_flow_graph_mut().emit(Instruction::PropertyCall {
             object,
             property,
             args,
@@ -104,36 +76,72 @@ impl<'a> IRBuilder<'a> {
         result
     }
 
-    pub fn load_external_variable(&mut self, name: String) -> ValueRef {
+    fn load_external_variable(&mut self, name: String) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.current_block_mut()
+        self.data_flow_graph_mut()
             .emit(Instruction::LoadEnv { result, name });
 
         result
     }
 
-    pub fn load_argument(&mut self, index: usize) -> ValueRef {
+    fn load_argument(&mut self, index: usize) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.current_block_mut()
+        self.data_flow_graph_mut()
             .emit(Instruction::LoadArg { result, index });
 
         result
     }
 
-    pub fn make_call(&mut self, func: ValueRef, args: Vec<ValueRef>) -> ValueRef {
+    fn make_call(&mut self, func: ValueRef, args: Vec<ValueRef>) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.current_block_mut()
+        self.data_flow_graph_mut()
             .emit(Instruction::Call { result, func, args });
 
         result
     }
 
-    pub fn br_if(&mut self, cond: ValueRef, then_blk: BlockId, else_blk: Option<BlockId>) {}
+    fn br_if(&mut self, condition: ValueRef, then_blk: BlockId, else_blk: Option<BlockId>) {
+        self.data_flow_graph_mut().emit(Instruction::BrIf {
+            condition,
+            then_blk,
+            else_blk,
+        });
+    }
 
-    pub fn return_(&mut self, value: Option<ValueRef>) {
-        self.current_block_mut().emit(Instruction::Return { value });
+    fn br(&mut self, target: BlockId) {
+        self.data_flow_graph_mut().emit(Instruction::Br { target });
+    }
+
+    fn return_(&mut self, value: Option<ValueRef>) {
+        self.data_flow_graph_mut()
+            .emit(Instruction::Return { value });
+    }
+}
+
+pub struct FunctionBuilder<'a> {
+    pub module: &'a mut Module,
+    pub func: Function,
+}
+
+impl<'a> FunctionBuilder<'a> {
+    pub fn new(module: &'a mut Module, func: Function) -> Self {
+        Self { module, func }
+    }
+
+    pub fn finalize(self) -> Function {
+        self.func
+    }
+}
+
+impl<'a> InstBuilder for FunctionBuilder<'a> {
+    fn data_flow_graph(&self) -> &DataFlowGraph {
+        &self.func.dfg
+    }
+
+    fn data_flow_graph_mut(&mut self) -> &mut DataFlowGraph {
+        &mut self.func.dfg
     }
 }

@@ -1,31 +1,102 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::ast::*;
-use crate::instruction::{Module, Opcode, ValueRef};
-use crate::irbuilder::IRBuilder;
+use crate::instruction::{Function, Module, Opcode, ValueRef};
+use crate::irbuilder::{FunctionBuilder, InstBuilder};
 use crate::value::Value;
 
-pub struct Codegen<'a> {
-    builder: IRBuilder<'a>,
+pub struct Codegen {
     symbol_table: SymbolTable,
+    module: Module,
 }
 
-impl<'a> Codegen<'a> {
-    pub fn new(ir_builder: IRBuilder<'a>) -> Self {
+impl Codegen {
+    pub fn new() -> Self {
         Self {
-            builder: ir_builder,
             symbol_table: SymbolTable::new(),
+            module: Module::new(),
         }
     }
 
-    pub fn compile(&mut self, ast: Program) {
-        let block = self.builder.create_block(Some("entry"));
-        self.builder.set_entry_block(block);
-        self.builder.switch_to_block(block);
+    pub fn compile(mut self, ast: Program) -> Module {
+        let func = Function::new(None);
+        let mut func_builder = FunctionBuilder::new(&mut self.module, func);
 
-        for item in ast.items {
-            self.compile_toplevel(item);
+        let entry = func_builder.create_block(Some("module".to_string()));
+        func_builder.data_flow_graph_mut().set_entry(entry);
+        func_builder.data_flow_graph_mut().switch_to_block(entry);
+
+        let mut func_compiler = FunctionCompiler::new(func_builder, &mut self.symbol_table);
+
+        for toplevel in ast.items {
+            func_compiler.compile_toplevel(toplevel);
         }
+
+        let func = func_compiler.finalize();
+
+        let Function { name, dfg } = func;
+
+        self.module.dfg = dfg;
+
+        self.module
+    }
+}
+
+pub struct FunctionCompiler<'a> {
+    builder: FunctionBuilder<'a>,
+    symbol_table: &'a mut SymbolTable,
+}
+
+impl<'a> FunctionCompiler<'a> {
+    pub fn new(builder: FunctionBuilder<'a>, symbol_table: &'a mut SymbolTable) -> Self {
+        Self {
+            builder,
+            symbol_table,
+        }
+    }
+
+    pub fn finalize(self) -> Function {
+        self.builder.finalize()
+    }
+
+    fn symbol_table(&mut self) -> &mut SymbolTable {
+        &mut self.symbol_table
+    }
+
+    fn builder(&mut self) -> &mut FunctionBuilder<'a> {
+        &mut self.builder
+    }
+
+    fn compile(mut self, func_item: FunctionItem) -> ValueRef {
+        let FunctionItem {
+            name,
+            params,
+            return_ty,
+            body,
+        } = func_item;
+
+        let entry = self.builder().create_block(Some(name));
+        self.builder().data_flow_graph_mut().set_entry(entry);
+        self.builder().switch_to_block(entry);
+
+        for (idx, param) in params.into_iter().enumerate() {
+            let value = self.builder().load_argument(idx);
+            self.symbol_table().define(param.name, value);
+        }
+
+        for stmt in body.into_iter() {
+            self.compile_statement(stmt);
+        }
+
+        let Self {
+            builder,
+            symbol_table,
+        } = self;
+
+        let func = builder.module.add_function(builder.func);
+
+        ValueRef::Function(func)
     }
 
     fn compile_toplevel(&mut self, toplevel: TopLevelItem) {
@@ -52,7 +123,7 @@ impl<'a> Codegen<'a> {
             }
             Statement::Return(ReturnStatement { value }) => {
                 let value = value.map(|expr| self.compile_expression(expr));
-                self.builder.return_(value);
+                self.builder().return_(value);
             }
 
             Statement::If(if_stmt) => {
@@ -63,15 +134,24 @@ impl<'a> Codegen<'a> {
         }
     }
 
-    pub fn compile_let_stmt(&mut self, let_stmt: LetStatement) {
+    fn compile_let_stmt(&mut self, let_stmt: LetStatement) {
         let LetStatement { name, ty, value } = let_stmt;
 
-        let value = value.map(|expr| self.compile_expression(expr));
-        let value = value.unwrap_or_else(|| self.builder.make_inst_value());
-        self.symbol_table.define(name, value);
+        match value {
+            Some(expr) => {
+                let value = self.compile_expression(expr);
+                let dest = self.builder().make_inst_value();
+                self.builder().assign(dest, value);
+                self.symbol_table().define(name, dest);
+            }
+            None => {
+                let dest = self.builder().make_inst_value();
+                self.symbol_table().define(name, dest);
+            }
+        }
     }
 
-    pub fn compile_item_stmt(&mut self, item: ItemStatement) {
+    fn compile_item_stmt(&mut self, item: ItemStatement) {
         match item {
             ItemStatement::Fn(fn_item) => {
                 self.compile_function(fn_item);
@@ -80,74 +160,66 @@ impl<'a> Codegen<'a> {
         }
     }
 
-    pub fn compile_if_stmt(&mut self, if_stmt: IfStatement) {
+    fn compile_if_stmt(&mut self, if_stmt: IfStatement) {
         let IfStatement {
             condition,
             then_branch,
             else_branch,
         } = if_stmt;
 
-        let then_blk = self.builder.create_block(None::<&str>);
+        let then_blk = self.builder().create_block(None);
         let else_blk = else_branch
             .as_ref()
-            .map(|_| self.builder.create_block(None::<&str>));
-        let next_blk = self.builder.create_block(None::<&str>);
+            .map(|_| self.builder().create_block(None));
+        let next_blk = self.builder().create_block(None);
 
         let cond = self.compile_expression(condition);
-        self.builder.br_if(cond, then_blk, else_blk);
+        self.builder().br_if(cond, then_blk, else_blk);
 
-        self.builder.switch_to_block(then_blk);
+        self.builder().switch_to_block(then_blk);
         self.compile_block(then_branch);
-        self.builder.cfg().set_block_after(next_blk, then_blk);
+        self.builder().br(next_blk);
 
         else_branch.map(|block| {
             let else_blk = else_blk.unwrap();
-            self.builder.switch_to_block(else_blk);
+            self.builder().switch_to_block(else_blk);
             self.compile_block(block);
-            self.builder.cfg().set_block_after(next_blk, else_blk);
+            self.builder().br(next_blk);
         });
 
-        self.builder.switch_to_block(next_blk);
+        self.builder().switch_to_block(next_blk);
     }
 
-    pub fn compile_block(&mut self, block: Vec<Statement>) {
+    fn compile_block(&mut self, block: Vec<Statement>) {
         for statement in block {
             self.compile_statement(statement);
         }
     }
 
-    pub fn compile_function(&mut self, fn_item: FunctionItem) -> ValueRef {
-        let FunctionItem {
-            name,
-            params,
-            return_ty,
-            body,
-        } = fn_item;
+    fn compile_function(&mut self, fn_item: FunctionItem) -> ValueRef {
+        let mut symbols = self.symbol_table().new_scope();
 
-        self.symbol_table.enter_scope();
-        let block = self.builder.create_block(Some(name.clone()));
-        self.builder.switch_to_block(block);
+        let func_name = if fn_item.name.is_empty() {
+            None
+        } else {
+            Some(fn_item.name.clone())
+        };
 
-        let func = self.builder.create_function(Some(name), block);
+        let func = Function::new(func_name.clone());
 
-        for (idx, param) in params.into_iter().enumerate() {
-            let value = self.builder.load_argument(idx);
-            self.symbol_table.define(param.name, value);
+        let builder = FunctionBuilder::new(&mut self.builder.module, func);
+
+        let compiler = FunctionCompiler::new(builder, &mut symbols);
+
+        let func = compiler.compile(fn_item);
+        if let Some(name) = func_name {
+            self.symbol_table().define(name, func);
         }
-
-        for stmt in body.into_iter() {
-            self.compile_statement(stmt);
-        }
-
-        self.symbol_table.exit_scope();
-
-        let next_blk = self.builder.create_block(None::<&str>);
-        self.builder.switch_to_block(block);
 
         func
     }
 
-    pub fn compile_expression(&mut self, expr: Expression) -> ValueRef {
+    fn compile_expression(&mut self, expr: Expression) -> ValueRef {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
@@ -165,7 +237,7 @@ impl<'a> Codegen<'a> {
 
         let object = self.compile_expression(*object);
 
-        self.builder.get_property(object, &property)
+        self.builder().get_property(object, &property)
     }
 
     fn compile_set_property(&mut self, expr: MemberExpression, value: ValueRef) {
@@ -173,7 +245,7 @@ impl<'a> Codegen<'a> {
 
         let object = self.compile_expression(*object);
 
-        self.builder.set_property(object, &property, value)
+        self.builder().set_property(object, &property, value)
     }
 
     fn compile_call(&mut self, expr: CallExpression) -> ValueRef {
@@ -190,12 +262,12 @@ impl<'a> Codegen<'a> {
 
                 let object = self.compile_expression(*object);
 
-                self.builder.call_property(object, property, args)
+                self.builder().call_property(object, property, args)
             }
             _ => {
                 let func = self.compile_expression(*func);
 
-                self.builder.make_call(func, args)
+                self.builder().make_call(func, args)
             }
         }
     }
@@ -209,11 +281,11 @@ impl<'a> Codegen<'a> {
             Expression::Member(member) => {
                 let old = self.compile_get_property(member.clone());
                 let value = match op {
-                    Some(BinOp::Add) => self.builder.binop(Opcode::Add, old, value),
-                    Some(BinOp::Sub) => self.builder.binop(Opcode::Sub, old, value),
-                    Some(BinOp::Mul) => self.builder.binop(Opcode::Mul, old, value),
-                    Some(BinOp::Div) => self.builder.binop(Opcode::Div, old, value),
-                    Some(BinOp::Mod) => self.builder.binop(Opcode::Mod, old, value),
+                    Some(BinOp::Add) => self.builder().binop(Opcode::Add, old, value),
+                    Some(BinOp::Sub) => self.builder().binop(Opcode::Sub, old, value),
+                    Some(BinOp::Mul) => self.builder().binop(Opcode::Mul, old, value),
+                    Some(BinOp::Div) => self.builder().binop(Opcode::Div, old, value),
+                    Some(BinOp::Mod) => self.builder().binop(Opcode::Mod, old, value),
                     None => old,
                     _ => unreachable!(),
                 };
@@ -224,43 +296,38 @@ impl<'a> Codegen<'a> {
             _ => {
                 let object = self.compile_expression(*object);
                 let value = match op {
-                    Some(BinOp::Add) => self.builder.binop(Opcode::Add, object, value),
-                    Some(BinOp::Sub) => self.builder.binop(Opcode::Sub, object, value),
-                    Some(BinOp::Mul) => self.builder.binop(Opcode::Mul, object, value),
-                    Some(BinOp::Div) => self.builder.binop(Opcode::Div, object, value),
-                    Some(BinOp::Mod) => self.builder.binop(Opcode::Mod, object, value),
+                    Some(BinOp::Add) => self.builder().binop(Opcode::Add, object, value),
+                    Some(BinOp::Sub) => self.builder().binop(Opcode::Sub, object, value),
+                    Some(BinOp::Mul) => self.builder().binop(Opcode::Mul, object, value),
+                    Some(BinOp::Div) => self.builder().binop(Opcode::Div, object, value),
+                    Some(BinOp::Mod) => self.builder().binop(Opcode::Mod, object, value),
                     None => object,
                     _ => unreachable!(),
                 };
 
-                self.builder.assign(object, value);
+                self.builder().assign(object, value);
                 value
             }
         }
     }
 
     fn compile_closure(&mut self, expr: ClosureExpression) -> ValueRef {
-        let ClosureExpression { params, body } = expr;
+        let mut symbols = self.symbol_table().new_scope();
 
-        self.symbol_table.enter_scope();
-        let block = self.builder.create_block(None::<&str>);
-        self.builder.switch_to_block(block);
+        let func = Function::new(None);
 
-        let func = self.builder.create_function(None::<&str>, block);
+        let mut builder = FunctionBuilder::new(&mut self.builder.module, func);
 
-        for (idx, param) in params.into_iter().enumerate() {
-            let value = self.builder.load_argument(idx);
-            self.symbol_table.define(param.name, value);
-        }
+        let mut compiler = FunctionCompiler::new(builder, &mut symbols);
 
-        for stmt in body.into_iter() {
-            self.compile_statement(stmt);
-        }
+        let fn_item = FunctionItem {
+            name: String::new(),
+            params: expr.params,
+            return_ty: None,
+            body: expr.body,
+        };
 
-        self.symbol_table.exit_scope();
-
-        let next_blk = self.builder.create_block(None::<&str>);
-        self.builder.switch_to_block(block);
+        let func = compiler.compile(fn_item);
 
         func
     }
@@ -274,15 +341,15 @@ impl<'a> Codegen<'a> {
             LiteralExpression::String(s) => Value::String(s),
         };
 
-        self.builder.make_constant(value)
+        self.builder().make_constant(value)
     }
 
     fn compile_identifier(&mut self, identifier: IdentifierExpression) -> ValueRef {
-        match self.symbol_table.get(&identifier.0) {
+        match self.symbol_table().get(&identifier.0) {
             Some(value) => value,
             None => {
-                let value = self.builder.load_external_variable(identifier.0.clone());
-                self.symbol_table.define(identifier.0, value);
+                let value = self.builder().load_external_variable(identifier.0.clone());
+                self.symbol_table().define(identifier.0, value);
                 value
             }
         }
@@ -293,51 +360,60 @@ impl<'a> Codegen<'a> {
         let rhs = self.compile_expression(rhs);
 
         match op {
-            BinOp::Add => self.builder.binop(Opcode::Add, lhs, rhs),
-            BinOp::Sub => self.builder.binop(Opcode::Sub, lhs, rhs),
-            BinOp::Mul => self.builder.binop(Opcode::Mul, lhs, rhs),
-            BinOp::Div => self.builder.binop(Opcode::Div, lhs, rhs),
-            BinOp::Mod => self.builder.binop(Opcode::Mod, lhs, rhs),
+            BinOp::Add => self.builder().binop(Opcode::Add, lhs, rhs),
+            BinOp::Sub => self.builder().binop(Opcode::Sub, lhs, rhs),
+            BinOp::Mul => self.builder().binop(Opcode::Mul, lhs, rhs),
+            BinOp::Div => self.builder().binop(Opcode::Div, lhs, rhs),
+            BinOp::Mod => self.builder().binop(Opcode::Mod, lhs, rhs),
 
-            BinOp::Equal => self.builder.binop(Opcode::Equal, lhs, rhs),
-            BinOp::NotEqual => self.builder.binop(Opcode::NotEqual, lhs, rhs),
-            BinOp::Greater => self.builder.binop(Opcode::Greater, lhs, rhs),
-            BinOp::GreaterEqual => self.builder.binop(Opcode::GreaterEqual, lhs, rhs),
-            BinOp::Less => self.builder.binop(Opcode::Less, lhs, rhs),
-            BinOp::LessEqual => self.builder.binop(Opcode::LessEqual, lhs, rhs),
+            BinOp::Equal => self.builder().binop(Opcode::Equal, lhs, rhs),
+            BinOp::NotEqual => self.builder().binop(Opcode::NotEqual, lhs, rhs),
+            BinOp::Greater => self.builder().binop(Opcode::Greater, lhs, rhs),
+            BinOp::GreaterEqual => self.builder().binop(Opcode::GreaterEqual, lhs, rhs),
+            BinOp::Less => self.builder().binop(Opcode::Less, lhs, rhs),
+            BinOp::LessEqual => self.builder().binop(Opcode::LessEqual, lhs, rhs),
 
             _ => unimplemented!("{:?}", op),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SymbolTable {
-    scopes: Vec<BTreeMap<String, ValueRef>>,
+    parent: Option<Box<SymbolTable>>,
+    symbols: BTreeMap<String, ValueRef>,
 }
 
 impl SymbolTable {
     fn new() -> Self {
         SymbolTable {
-            scopes: vec![BTreeMap::new()],
+            parent: None,
+            symbols: BTreeMap::new(),
         }
     }
 
+    fn is_top_level(&self) -> bool {
+        self.parent.is_none()
+    }
+
     fn get(&self, name: &str) -> Option<ValueRef> {
-        let last = self.scopes.last()?;
-        last.get(name).copied()
+        if let Some(value) = self.symbols.get(name) {
+            return Some(value.clone());
+        }
+        if let Some(parent) = &self.parent {
+            return parent.get(name);
+        }
+        None
     }
 
     fn define(&mut self, name: String, value: ValueRef) {
-        let last = self.scopes.last_mut().unwrap();
-        last.insert(name, value);
+        self.symbols.insert(name, value);
     }
 
-    fn enter_scope(&mut self) {
-        self.scopes.push(BTreeMap::new());
-    }
-
-    fn exit_scope(&mut self) {
-        self.scopes.pop();
+    fn new_scope(&self) -> SymbolTable {
+        Self {
+            parent: Some(Box::new(self.clone())),
+            symbols: BTreeMap::new(),
+        }
     }
 }
