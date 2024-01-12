@@ -6,12 +6,12 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub items: Vec<TopLevelItem>,
+    pub stmts: Vec<Statement>,
 }
 
 impl Program {
     pub fn new() -> Program {
-        return Program { items: Vec::new() };
+        return Program { stmts: Vec::new() };
     }
 }
 

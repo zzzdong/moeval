@@ -11,6 +11,21 @@ pub enum Value {
     Undefined,
 }
 
+impl Value {
+    // FIXME:
+    pub fn as_bool(&self) -> bool {
+        match self {
+            Value::Boolean(b) => *b,
+            Value::Integer(i) => *i != 0,
+            Value::Float(f) => *f != 0.0,
+            Value::String(s) => !s.is_empty(),
+            Value::Byte(b) => *b != 0,
+            Value::Char(c) => *c != '\0',
+            Value::Undefined => false,
+        }
+    }
+}
+
 impl Default for Value {
     fn default() -> Self {
         Value::Undefined

@@ -78,7 +78,7 @@ pub enum Instruction {
     BrIf {
         condition: ValueRef,
         then_blk: BlockId,
-        else_blk: Option<BlockId>,
+        else_blk: BlockId,
     },
     Br {
         target: BlockId,
@@ -90,42 +90,48 @@ pub struct FunctionId(usize);
 
 #[derive(Debug)]
 pub struct Module {
-    pub(crate) dfg: DataFlowGraph,
+    // pub(crate) dfg: DataFlowGraph,
     functions: Vec<Function>,
     func_map: BTreeMap<String, FunctionId>,
+    entry: Option<FunctionId>,
 }
 
 impl Module {
     pub fn new() -> Self {
         Self {
-            dfg: DataFlowGraph::new(),
+            // dfg: DataFlowGraph::new(),
             functions: Vec::new(),
             func_map: BTreeMap::new(),
+            entry: None,
         }
     }
-
-    pub fn add_function(&mut self, func: Function) -> FunctionId {
+    pub fn declare_function(&mut self, name: impl Into<Option<String>>) -> FunctionId {
         let id = FunctionId(self.functions.len());
+        self.functions.push(Function::new(name));
+        id
+    }
 
+    pub fn define_function(&mut self, id: FunctionId, func: Function) {
         if let Some(ref name) = &func.name {
             if !name.is_empty() {
                 self.func_map.insert(name.to_string(), id);
             }
         }
 
-        self.functions.push(func);
-        id
+        self.functions[id.0] = func;
+    }
+
+    pub fn set_entry(&mut self, id: FunctionId) {
+        self.entry = Some(id);
     }
 
     pub fn data_flow_graph(&self) -> &DataFlowGraph {
-        &self.dfg
+        &self.functions[self.entry.unwrap().0].dfg
     }
 
     pub fn get_function(&self, id: FunctionId) -> &DataFlowGraph {
         &self.functions[id.0].dfg
     }
-
-
 
     pub fn debug(&self) {
         for (i, func) in self.functions.iter().enumerate() {
@@ -133,7 +139,7 @@ impl Module {
             func.dfg.debug();
             println!();
         }
-        self.dfg.debug();
+        println!("entry: {:?}", self.entry);
     }
 }
 
@@ -206,7 +212,7 @@ impl DataFlowGraph {
         self.entry
     }
 
-    pub fn set_entry(&mut self, block: BlockId) {
+    pub fn set_entry_block(&mut self, block: BlockId) {
         self.entry = Some(block);
     }
 

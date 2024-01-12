@@ -100,12 +100,12 @@ fn parse_program(pair: Pair<Rule>) -> Result<Program> {
         match item.as_rule() {
             Rule::statement => {
                 let statement = parse_statement(item)?;
-                program.items.push(TopLevelItem::Statement(statement));
+                program.stmts.push(statement);
             }
-            Rule::expression => {
-                let expression = parse_expression(item)?;
-                program.items.push(TopLevelItem::Expression(expression));
-            }
+            // Rule::expression => {
+            //     let expression = parse_expression(item)?;
+            //     program.items.push(TopLevelItem::Expression(expression));
+            // }
             Rule::EOI => {
                 break;
             }

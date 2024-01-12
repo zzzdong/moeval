@@ -15,6 +15,7 @@ struct StackFrame {
     pub variables: Variables,
 }
 
+#[derive(Debug)]
 struct Stack {
     frames: Vec<StackFrame>,
 }
@@ -68,7 +69,7 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, script: &str) -> Option<&Value> {
+    pub fn eval(&mut self, script: &str) -> Option<Value> {
         let module = Compiler::compile(script).unwrap();
 
         module.debug();
@@ -81,10 +82,11 @@ impl Evaluator {
         return self.eval_function(dfg, &module);
     }
 
-    pub fn eval_function(&mut self, dfg: &DataFlowGraph, module: &Module) -> Option<&Value> {
+    pub fn eval_function(&mut self, dfg: &DataFlowGraph, module: &Module) -> Option<Value> {
         let mut next_block = dfg.entry();
         while let Some(block) = next_block.take() {
             for inst in dfg.instructions(block) {
+                // println!("-> {:?}", inst);
                 match inst {
                     Instruction::Br { target } => {
                         next_block = Some(*target);
@@ -101,9 +103,7 @@ impl Evaluator {
                                 if *b {
                                     next_block = Some(*then_blk);
                                 } else {
-                                    if let Some(else_blk) = else_blk {
-                                        next_block = Some(*else_blk);
-                                    }
+                                    next_block = Some(*else_blk);
                                 }
                             }
                             _ => unreachable!("unsupported operate"),
@@ -129,6 +129,8 @@ impl Evaluator {
                             Opcode::LessEqual => Value::Boolean(lhs <= rhs),
                             Opcode::Equal => Value::Boolean(lhs == rhs),
                             Opcode::NotEqual => Value::Boolean(lhs != rhs),
+                            Opcode::And => Value::Boolean(lhs.as_bool() && rhs.as_bool()),
+                            Opcode::Or => Value::Boolean(lhs.as_bool() || rhs.as_bool()),
                             _ => unreachable!("unsupported op {op:?}"),
                         };
 
@@ -138,20 +140,32 @@ impl Evaluator {
                         ValueRef::Function(id) => {
                             let func = module.get_function(*id);
 
+                            let args: Vec<Value> = args
+                                .iter()
+                                .map(|arg| self.stack.get_value(*arg).clone())
+                                .collect();
+
                             self.stack.push_frame(StackFrame {
-                                variables: Variables::from_dfg(&module.dfg),
+                                variables: Variables::from_dfg(func),
                             });
 
                             for arg in args {
-                                self.stack
-                                    .insert_argument(self.stack.get_value(*arg).clone());
+                                // println!("on call, arg: {:?}", &arg);
+                                self.stack.insert_argument(arg);
                             }
-                            return self.eval_function(func, module);
+                            let ret = self.eval_function(func, module);
+                            // println!("on call, ret: {:?}", &ret);
+
+                            self.stack.pop_frame();
+
+                            self.stack
+                                .set_value(*result, ret.clone().unwrap_or_default());
                         }
                         _ => unreachable!("must call a function"),
                     },
                     Instruction::Return { value } => {
-                        let value = value.map(|v| self.stack.get_value(v));
+                        // println!("on return, value: {:?} {:?}", &value, self.stack.get_value(value.unwrap()));
+                        let value = value.map(|v| self.stack.get_value(v)).cloned();
                         return value;
                     }
                     Instruction::Store { object, value } => {
@@ -212,7 +226,6 @@ impl Variables {
     }
 
     fn set_value(&mut self, index: ValueRef, value: Value) {
-        println!("--> {:?}, index({:?}), value({:?})", self, index, value);
         match index {
             ValueRef::Constant(i) => self.constants[i as usize] = value,
             ValueRef::Inst(i) => self.inst_value[i as usize] = value,
@@ -239,13 +252,17 @@ mod tests {
 
         let script = r#"
         fn fib(n) {
-            if n < 2 {
-                return n;
+            if n < 1 {
+                return 0;
             }
+            if n <= 2 {
+                return 1;
+            }
+
             return fib(n - 1) + fib(n - 2);
         }
 
-        return fib(10);
+        return fib(20);
         "#;
 
         let retval = eval.eval(&script);

@@ -21,6 +21,10 @@ pub trait InstBuilder {
         self.data_flow_graph_mut().switch_to_block(block);
     }
 
+    fn set_entry_block(&mut self, block: BlockId) {
+        self.data_flow_graph_mut().set_entry_block(block);
+    }
+
     fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
         let result = self.data_flow_graph_mut().make_inst_value();
 
@@ -103,7 +107,7 @@ pub trait InstBuilder {
         result
     }
 
-    fn br_if(&mut self, condition: ValueRef, then_blk: BlockId, else_blk: Option<BlockId>) {
+    fn br_if(&mut self, condition: ValueRef, then_blk: BlockId, else_blk: BlockId) {
         self.data_flow_graph_mut().emit(Instruction::BrIf {
             condition,
             then_blk,
@@ -122,17 +126,12 @@ pub trait InstBuilder {
 }
 
 pub struct FunctionBuilder<'a> {
-    pub module: &'a mut Module,
-    pub func: Function,
+    func: &'a mut Function,
 }
 
 impl<'a> FunctionBuilder<'a> {
-    pub fn new(module: &'a mut Module, func: Function) -> Self {
-        Self { module, func }
-    }
-
-    pub fn finalize(self) -> Function {
-        self.func
+    pub fn new(func: &'a mut Function) -> Self {
+        Self { func }
     }
 }
 
