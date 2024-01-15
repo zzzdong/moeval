@@ -1,5 +1,7 @@
 use std::{cmp, ops};
 
+use crate::vm::Operate;
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Boolean(bool),
@@ -11,106 +13,164 @@ pub enum Value {
     Undefined,
 }
 
-impl Value {
-    // FIXME:
-    pub fn as_bool(&self) -> bool {
-        match self {
-            Value::Boolean(b) => *b,
-            Value::Integer(i) => *i != 0,
-            Value::Float(f) => *f != 0.0,
-            Value::String(s) => !s.is_empty(),
-            Value::Byte(b) => *b != 0,
-            Value::Char(c) => *c != '\0',
-            Value::Undefined => false,
-        }
-    }
-}
-
 impl Default for Value {
     fn default() -> Self {
         Value::Undefined
     }
 }
 
-impl ops::Add for &Value {
-    type Output = Value;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs + rhs),
-            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs + rhs),
-            _ => Value::Undefined,
-        }
-    }
-}
-
-impl ops::Sub for &Value {
-    type Output = Value;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs - rhs),
-            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs - rhs),
-            _ => Value::Undefined,
-        }
-    }
-}
-impl ops::Mul for &Value {
-    type Output = Value;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs * rhs),
-            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs * rhs),
-            _ => Value::Undefined,
-        }
-    }
-}
-
-impl ops::Div for &Value {
-    type Output = Value;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs / rhs),
-            (Value::Float(lhs), Value::Float(rhs)) => Value::Float(lhs / rhs),
-            _ => Value::Undefined,
-        }
-    }
-}
-
-impl ops::Rem for &Value {
-    type Output = Value;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => Value::Integer(lhs % rhs),
-            _ => Value::Undefined,
-        }
-    }
-}
-
-impl cmp::PartialEq for &Value {
-    fn eq(&self, other: &Self) -> bool {
+impl Operate for Value {
+    fn add(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
         match (self, other) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => lhs == rhs,
-            (Value::Float(lhs), Value::Float(rhs)) => lhs == rhs,
-            (Value::String(lhs), Value::String(rhs)) => lhs == rhs,
-            (Value::Boolean(lhs), Value::Boolean(rhs)) => lhs == rhs,
-            (Value::Undefined, Value::Undefined) => true,
-            _ => false,
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::String(format!("{}{}", l, r))),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for addition")),
         }
     }
+
+    fn sub(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l - r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l - r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for subtraction")),
+        }
+    }
+
+    fn mul(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l * r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l * r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for multiplication")),
+        }
+    }
+
+    fn div(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l / r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l / r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for division")),
+        }
+    }
+
+    fn modulo(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l % r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for modulo")),
+        }
+    }
+
+    fn pow(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l.pow(*r as u32))),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l.powf(*r))),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for exponentiation")),
+        }
+    }
+
+    fn lt(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l < r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l < r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l < r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn le(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l <= r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l <= r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l <= r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn gt(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l > r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l > r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l > r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn ge(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l >= r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l >= r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l >= r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn eq(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l == r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l == r)),
+            (Value::Char(l), Value::Char(r)) => Ok(Value::Boolean(l == r)),
+            (Value::Byte(l), Value::Byte(r)) => Ok(Value::Boolean(l == r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l == r)),
+            (Value::Boolean(l), Value::Boolean(r)) => Ok(Value::Boolean(l == r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn ne(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Boolean(l != r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Boolean(l != r)),
+            (Value::Char(l), Value::Char(r)) => Ok(Value::Boolean(l != r)),
+            (Value::Byte(l), Value::Byte(r)) => Ok(Value::Boolean(l != r)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Boolean(l != r)),
+            (Value::Boolean(l), Value::Boolean(r)) => Ok(Value::Boolean(l != r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for comparison")),
+        }
+    }
+
+    fn and(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Boolean(l), Value::Boolean(r)) => Ok(Value::Boolean(*l && *r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for logical and")),
+        }
+    }
+
+    fn or(&self, other: &Self) -> Result<Self, crate::vm::RuntimeError> {
+        match (self, other) {
+            (Value::Boolean(l), Value::Boolean(r)) => Ok(Value::Boolean(*l || *r)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operands for logical or")),
+        }
+    }
+
+
+    fn not(&self) -> Result<Self, crate::vm::RuntimeError> {
+        match self {
+            Value::Boolean(b) => Ok(Value::Boolean(!b)),
+            _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operand for negation")),
+        }
+    }
+
+    // fn call(&self, args: &[Self]) -> Result<Option<Self>, crate::vm::RuntimeError> {
+    //     match self {
+    //         Value::Function(f) => f(args),
+    //         _ => Err(crate::vm::RuntimeError::invalid_operation("Invalid operand for function call")),
+    //     }
+    // }
 }
 
-impl cmp::PartialOrd for &Value {
-    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
-        match (self, other) {
-            (Value::Integer(lhs), Value::Integer(rhs)) => lhs.partial_cmp(rhs),
-            (Value::Float(lhs), Value::Float(rhs)) => lhs.partial_cmp(rhs),
-            (Value::String(lhs), Value::String(rhs)) => lhs.partial_cmp(rhs),
-            (Value::Boolean(lhs), Value::Boolean(rhs)) => lhs.partial_cmp(rhs),
-            _ => None,
-        }
-    }
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

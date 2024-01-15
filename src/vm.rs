@@ -2,9 +2,31 @@ use std::collections::HashMap;
 
 use crate::{
     compiler::Compiler,
-    instruction::{BlockId, DataFlowGraph, Instruction, Module, Opcode, ValueRef},
+    instruction::{BlockId, ControlFlowGraph, Instruction, Module, Opcode, ValueRef},
     value::Value,
 };
+
+#[derive(Debug)]
+pub enum RuntimeError {
+    InvalidOperation(String),
+}
+
+impl RuntimeError {
+    pub fn invalid_operation(msg: impl Into<String>) -> Self {
+        RuntimeError::InvalidOperation(msg.into())
+    }
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
 
 pub struct Environment {
     symbols: HashMap<String, Value>,
@@ -69,20 +91,24 @@ impl Evaluator {
         }
     }
 
-    pub fn eval(&mut self, script: &str) -> Option<Value> {
+    pub fn eval(&mut self, script: &str) -> Result<Option<Value>, RuntimeError> {
         let module = Compiler::compile(script).unwrap();
 
         module.debug();
 
-        let dfg = module.data_flow_graph();
+        let dfg = module.control_flow_graph();
 
-        let variables = Variables::from_dfg(dfg);
+        let variables = Variables::from_cfg(dfg);
         self.stack.push_frame(StackFrame { variables });
 
         return self.eval_function(dfg, &module);
     }
 
-    pub fn eval_function(&mut self, dfg: &DataFlowGraph, module: &Module) -> Option<Value> {
+    pub fn eval_function(
+        &mut self,
+        dfg: &ControlFlowGraph,
+        module: &Module,
+    ) -> Result<Option<Value>, RuntimeError> {
         let mut next_block = dfg.entry();
         while let Some(block) = next_block.take() {
             for inst in dfg.instructions(block) {
@@ -118,23 +144,23 @@ impl Evaluator {
                         let lhs = self.stack.get_value(*lhs);
                         let rhs = self.stack.get_value(*rhs);
                         let ret = match op {
-                            Opcode::Add => lhs + rhs,
-                            Opcode::Sub => lhs - rhs,
-                            Opcode::Mul => lhs * rhs,
-                            Opcode::Div => lhs / rhs,
-                            Opcode::Mod => lhs % rhs,
-                            Opcode::Greater => Value::Boolean(lhs > rhs),
-                            Opcode::GreaterEqual => Value::Boolean(lhs >= rhs),
-                            Opcode::Less => Value::Boolean(lhs < rhs),
-                            Opcode::LessEqual => Value::Boolean(lhs <= rhs),
-                            Opcode::Equal => Value::Boolean(lhs == rhs),
-                            Opcode::NotEqual => Value::Boolean(lhs != rhs),
-                            Opcode::And => Value::Boolean(lhs.as_bool() && rhs.as_bool()),
-                            Opcode::Or => Value::Boolean(lhs.as_bool() || rhs.as_bool()),
+                            Opcode::Add => Operate::add(lhs, rhs),
+                            Opcode::Sub => Operate::sub(lhs, rhs),
+                            Opcode::Mul => Operate::mul(lhs, rhs),
+                            Opcode::Div => Operate::div(lhs, rhs),
+                            Opcode::Mod => Operate::modulo(lhs, rhs),
+                            Opcode::Greater => Operate::gt(lhs, rhs),
+                            Opcode::GreaterEqual => Operate::ge(lhs, rhs),
+                            Opcode::Less => Operate::lt(lhs, rhs),
+                            Opcode::LessEqual => Operate::le(lhs, rhs),
+                            Opcode::Equal => Operate::eq(lhs, rhs),
+                            Opcode::NotEqual => Operate::ne(lhs, rhs),
+                            Opcode::And => Operate::and(lhs, rhs),
+                            Opcode::Or => Operate::or(lhs, rhs),
                             _ => unreachable!("unsupported op {op:?}"),
                         };
 
-                        self.stack.set_value(*result, ret);
+                        self.stack.set_value(*result, ret?);
                     }
                     Instruction::Call { func, args, result } => match func {
                         ValueRef::Function(id) => {
@@ -146,14 +172,14 @@ impl Evaluator {
                                 .collect();
 
                             self.stack.push_frame(StackFrame {
-                                variables: Variables::from_dfg(func),
+                                variables: Variables::from_cfg(func),
                             });
 
                             for arg in args {
                                 // println!("on call, arg: {:?}", &arg);
                                 self.stack.insert_argument(arg);
                             }
-                            let ret = self.eval_function(func, module);
+                            let ret = self.eval_function(func, module)?;
                             // println!("on call, ret: {:?}", &ret);
 
                             self.stack.pop_frame();
@@ -166,7 +192,7 @@ impl Evaluator {
                     Instruction::Return { value } => {
                         // println!("on return, value: {:?} {:?}", &value, self.stack.get_value(value.unwrap()));
                         let value = value.map(|v| self.stack.get_value(v)).cloned();
-                        return value;
+                        return Ok(value);
                     }
                     Instruction::Store { object, value } => {
                         let value = self.stack.get_value(*value);
@@ -180,7 +206,7 @@ impl Evaluator {
                 }
             }
         }
-        None
+        Ok(None)
     }
 }
 
@@ -208,7 +234,7 @@ impl Variables {
         self.stack_value[index].clone()
     }
 
-    fn from_dfg(dfg: &DataFlowGraph) -> Self {
+    fn from_cfg(dfg: &ControlFlowGraph) -> Self {
         let mut values = Vec::new();
         for _ in 0..dfg.inst_values.len() {
             values.push(Value::default());
@@ -242,6 +268,28 @@ impl Variables {
     }
 }
 
+pub trait Operate
+where
+    Self: Sized,
+{
+    fn add(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn sub(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn mul(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn div(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn modulo(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn pow(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn lt(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn gt(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn le(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn ge(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn eq(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn ne(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn and(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn or(&self, other: &Self) -> Result<Self, RuntimeError>;
+    fn not(&self) -> Result<Self, RuntimeError>;
+    // fn call(&self, args: &[Self]) -> Result<Option<Self>, RuntimeError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,7 +313,7 @@ mod tests {
         return fib(20);
         "#;
 
-        let retval = eval.eval(&script);
+        let retval = eval.eval(&script).unwrap();
 
         println!("{:?}", retval);
     }

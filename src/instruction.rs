@@ -125,11 +125,11 @@ impl Module {
         self.entry = Some(id);
     }
 
-    pub fn data_flow_graph(&self) -> &DataFlowGraph {
+    pub fn control_flow_graph(&self) -> &ControlFlowGraph {
         &self.functions[self.entry.unwrap().0].dfg
     }
 
-    pub fn get_function(&self, id: FunctionId) -> &DataFlowGraph {
+    pub fn get_function(&self, id: FunctionId) -> &ControlFlowGraph {
         &self.functions[id.0].dfg
     }
 
@@ -146,14 +146,14 @@ impl Module {
 #[derive(Debug)]
 pub struct Function {
     pub name: Option<String>,
-    pub dfg: DataFlowGraph,
+    pub dfg: ControlFlowGraph,
 }
 
 impl Function {
     pub fn new(name: impl Into<Option<String>>) -> Self {
         Self {
             name: name.into(),
-            dfg: DataFlowGraph::new(),
+            dfg: ControlFlowGraph::new(),
         }
     }
 }
@@ -183,7 +183,7 @@ impl Block {
 }
 
 #[derive(Debug)]
-pub struct DataFlowGraph {
+pub struct ControlFlowGraph {
     pub constants: Vec<crate::value::Value>,
     pub inst_values: Vec<ValueRef>,
     pub blocks: Vec<Block>,
@@ -191,7 +191,7 @@ pub struct DataFlowGraph {
     current_block: Option<BlockId>,
 }
 
-impl DataFlowGraph {
+impl ControlFlowGraph {
     pub fn new() -> Self {
         Self {
             constants: Vec::new(),

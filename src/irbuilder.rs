@@ -1,34 +1,34 @@
 use crate::instruction::*;
 
 pub trait InstBuilder {
-    fn data_flow_graph(&self) -> &DataFlowGraph;
+    fn control_flow_graph(&self) -> &ControlFlowGraph;
 
-    fn data_flow_graph_mut(&mut self) -> &mut DataFlowGraph;
+    fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph;
 
     fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
-        self.data_flow_graph_mut().make_constant(value)
+        self.control_flow_graph_mut().make_constant(value)
     }
 
     fn make_inst_value(&mut self) -> ValueRef {
-        self.data_flow_graph_mut().make_inst_value()
+        self.control_flow_graph_mut().make_inst_value()
     }
 
     fn create_block(&mut self, label: impl Into<Option<String>>) -> BlockId {
-        self.data_flow_graph_mut().create_block(label)
+        self.control_flow_graph_mut().create_block(label)
     }
 
     fn switch_to_block(&mut self, block: BlockId) {
-        self.data_flow_graph_mut().switch_to_block(block);
+        self.control_flow_graph_mut().switch_to_block(block);
     }
 
     fn set_entry_block(&mut self, block: BlockId) {
-        self.data_flow_graph_mut().set_entry_block(block);
+        self.control_flow_graph_mut().set_entry_block(block);
     }
 
     fn binop(&mut self, op: Opcode, lhs: ValueRef, rhs: ValueRef) -> ValueRef {
-        let result = self.data_flow_graph_mut().make_inst_value();
+        let result = self.control_flow_graph_mut().make_inst_value();
 
-        self.data_flow_graph_mut().emit(Instruction::BinaryOp {
+        self.control_flow_graph_mut().emit(Instruction::BinaryOp {
             op,
             result,
             lhs,
@@ -39,14 +39,14 @@ pub trait InstBuilder {
     }
 
     fn assign(&mut self, object: ValueRef, value: ValueRef) {
-        self.data_flow_graph_mut()
+        self.control_flow_graph_mut()
             .emit(Instruction::Store { object, value })
     }
 
     fn get_property(&mut self, object: ValueRef, property: &str) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.data_flow_graph_mut().emit(Instruction::PropertyGet {
+        self.control_flow_graph_mut().emit(Instruction::PropertyGet {
             result,
             object,
             property: property.to_string(),
@@ -56,7 +56,7 @@ pub trait InstBuilder {
     }
 
     fn set_property(&mut self, object: ValueRef, property: &str, value: ValueRef) {
-        self.data_flow_graph_mut().emit(Instruction::PropertySet {
+        self.control_flow_graph_mut().emit(Instruction::PropertySet {
             object,
             property: property.to_string(),
             value,
@@ -71,7 +71,7 @@ pub trait InstBuilder {
     ) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.data_flow_graph_mut().emit(Instruction::PropertyCall {
+        self.control_flow_graph_mut().emit(Instruction::PropertyCall {
             object,
             property,
             args,
@@ -83,7 +83,7 @@ pub trait InstBuilder {
     fn load_external_variable(&mut self, name: String) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.data_flow_graph_mut()
+        self.control_flow_graph_mut()
             .emit(Instruction::LoadEnv { result, name });
 
         result
@@ -92,7 +92,7 @@ pub trait InstBuilder {
     fn load_argument(&mut self, index: usize) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.data_flow_graph_mut()
+        self.control_flow_graph_mut()
             .emit(Instruction::LoadArg { result, index });
 
         result
@@ -101,14 +101,14 @@ pub trait InstBuilder {
     fn make_call(&mut self, func: ValueRef, args: Vec<ValueRef>) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.data_flow_graph_mut()
+        self.control_flow_graph_mut()
             .emit(Instruction::Call { result, func, args });
 
         result
     }
 
     fn br_if(&mut self, condition: ValueRef, then_blk: BlockId, else_blk: BlockId) {
-        self.data_flow_graph_mut().emit(Instruction::BrIf {
+        self.control_flow_graph_mut().emit(Instruction::BrIf {
             condition,
             then_blk,
             else_blk,
@@ -116,11 +116,11 @@ pub trait InstBuilder {
     }
 
     fn br(&mut self, target: BlockId) {
-        self.data_flow_graph_mut().emit(Instruction::Br { target });
+        self.control_flow_graph_mut().emit(Instruction::Br { target });
     }
 
     fn return_(&mut self, value: Option<ValueRef>) {
-        self.data_flow_graph_mut()
+        self.control_flow_graph_mut()
             .emit(Instruction::Return { value });
     }
 }
@@ -136,11 +136,11 @@ impl<'a> FunctionBuilder<'a> {
 }
 
 impl<'a> InstBuilder for FunctionBuilder<'a> {
-    fn data_flow_graph(&self) -> &DataFlowGraph {
+    fn control_flow_graph(&self) -> &ControlFlowGraph {
         &self.func.dfg
     }
 
-    fn data_flow_graph_mut(&mut self) -> &mut DataFlowGraph {
+    fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph {
         &mut self.func.dfg
     }
 }

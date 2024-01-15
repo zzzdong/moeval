@@ -1,6 +1,7 @@
 mod ast;
 mod codegen;
 mod compiler;
+mod error;
 mod instruction;
 mod irbuilder;
 mod parser;
