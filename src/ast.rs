@@ -133,6 +133,7 @@ pub enum Expression {
     Prefix(PrefixOp, Box<Expression>),
     Literal(LiteralExpression),
     Identifier(IdentifierExpression),
+    Environment(EnvironmentExpression),
     Tuple(TupleExpression),
     Array(ArrayExpression),
     Closure(ClosureExpression),
@@ -142,6 +143,7 @@ pub enum Expression {
     Index(IndexExpression),
     Slice(SliceExpression),
     Try(Box<Expression>),
+    
 }
 
 #[derive(Debug, Clone)]
@@ -318,3 +320,6 @@ pub struct TupleExpression(pub Vec<Expression>);
 
 #[derive(Debug, Clone)]
 pub struct ArrayExpression(pub Vec<Expression>);
+
+#[derive(Debug, Clone)]
+pub struct EnvironmentExpression(pub String);

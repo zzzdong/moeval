@@ -49,13 +49,13 @@ mod test {
 
     #[test]
     fn test_compiler() {
-        Compiler::compile("1 + 2 * 3 - 4 - a * b / c == 0").unwrap();
+        Compiler::compile("1 + 2 * 3 - 4 - a * b / c == 0;").unwrap();
 
-        Compiler::compile("a.b.c.d(1, 1) + b(c, d)").unwrap();
+        Compiler::compile("a.b.c.d(1, 1) + b(c, d);").unwrap();
 
-        Compiler::compile("a.c = b.c(1,1)").unwrap();
+        Compiler::compile("a.c = b.c(1,1);").unwrap();
 
-        Compiler::compile("all(Tweets, |x|{return x.Len <= 240;})").unwrap();
+        Compiler::compile("all(Tweets, |x|{return x.Len <= 240;});").unwrap();
 
         let input = r#"
 let cc = 100;

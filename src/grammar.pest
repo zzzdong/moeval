@@ -131,6 +131,7 @@ atom = {
   | tuple
   | array
   | closure
+  | env
 }
 
 /// Tuple
@@ -140,7 +141,7 @@ tuple = { "(" ~ (((expression ~ ",")+ ~ expression) | (expression ~ ",")) ~ ")" 
 array = { "[" ~ expression ~ ("," ~ expression)* ~ "]" }
 
 /// Literal
-literal = { boolean | integer | float | string | character }
+literal = { boolean | float | integer | string | character }
 
 /// Boolean
 boolean = @{ "true" | "false" }
@@ -150,6 +151,9 @@ integer = @{ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT+ | ASCII_DIGIT) }
 
 /// float
 float = @{ integer ~ "." ~ integer }
+
+/// environment variable
+env = ${ "$" ~ name }
 
 /// Opening brace for a rule.
 opening_brace = { "{" }

@@ -83,6 +83,15 @@ pub enum Instruction {
     Br {
         target: BlockId,
     },
+    IterateNext {
+        result: ValueRef,
+        iter: ValueRef,
+    },
+    Range {
+        begin: ValueRef,
+        end: ValueRef,
+        result: ValueRef,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -90,7 +99,6 @@ pub struct FunctionId(usize);
 
 #[derive(Debug)]
 pub struct Module {
-    // pub(crate) dfg: DataFlowGraph,
     functions: Vec<Function>,
     func_map: BTreeMap<String, FunctionId>,
     entry: Option<FunctionId>,
@@ -99,7 +107,6 @@ pub struct Module {
 impl Module {
     pub fn new() -> Self {
         Self {
-            // dfg: DataFlowGraph::new(),
             functions: Vec::new(),
             func_map: BTreeMap::new(),
             entry: None,

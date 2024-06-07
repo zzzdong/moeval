@@ -556,6 +556,7 @@ fn parse_atom(pair: Pair<Rule>) -> Result<Expression> {
         Rule::tuple => parse_tuple(atom).map(Expression::Tuple),
         Rule::array => parse_array(atom).map(Expression::Array),
         Rule::closure => parse_closure(atom).map(Expression::Closure),
+        Rule::env => parse_env(atom).map(Expression::Environment),
         _ => unreachable!("unknown atom: {:?}", atom),
     }
 }
@@ -623,6 +624,15 @@ fn parse_array(pair: Pair<Rule>) -> Result<ArrayExpression> {
     let elements: Result<Vec<Expression>> = pairs.map(parse_expression).collect();
 
     Ok(ArrayExpression(elements?))
+}
+
+fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
+    println!("==> {:?}", pair);
+    let mut pairs = pair.into_inner();
+    
+    let name = pairs.next().unwrap();
+
+    Ok(EnvironmentExpression(name.as_str().to_string()))
 }
 
 #[cfg(test)]
@@ -752,6 +762,8 @@ fn add(a: int, b: int) -> int {
 }
 
 let a: Fn<(int, int), int> = add;
+
+let r = $req;
 "#;
         let mut pairs = PestParser::parse(Rule::program, input).unwrap();
 

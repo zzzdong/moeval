@@ -2,7 +2,7 @@ use std::{cmp, ops};
 
 use crate::vm::Operate;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Value {
     Boolean(bool),
     Byte(u8),

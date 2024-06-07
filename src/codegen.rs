@@ -1,7 +1,6 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, LinkedList};
+use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use crate::ast::*;
 use crate::instruction::{Function, FunctionId, Module, Opcode, ValueRef};
@@ -83,6 +82,9 @@ impl<'a> FunctionCompiler<'a> {
             Statement::If(if_stmt) => {
                 self.compile_if_stmt(if_stmt);
             }
+            Statement::For(for_stmt) => {
+                self.compile_for_stmt(for_stmt);
+            }
 
             _ => unimplemented!("{:?}", statement),
         }
@@ -145,10 +147,45 @@ impl<'a> FunctionCompiler<'a> {
         self.builder.switch_to_block(next_blk);
     }
 
+    fn compile_for_stmt(&mut self, for_stmt: ForStatement) {
+        let ForStatement {
+            pat,
+            iterable,
+            body,
+        } = for_stmt;
+
+        let pat = match pat {
+            Pattern::Identifier(ident) => {
+                let pat = self.builder.make_inst_value();
+                self.symbols.declare(&ident, pat);
+                pat
+            }
+            Pattern::Wildcard => self.builder.make_inst_value(),
+            _ => {
+                unimplemented!("only support Ident pattern in ForStatement");
+            }
+        };
+
+        let iterable = self.compile_expression(iterable);
+
+        let loop_blk = self.builder.create_block(None);
+        let after_blk = self.builder.create_block(None);
+
+        let iter_ret = self.builder.iterate_next(iterable);
+        let iter_has_next = self.builder.make_inst_value();
+
+        self.builder.br(loop_blk);
+
+        self.builder.switch_to_block(loop_blk);
+    }
+
     fn compile_block(&mut self, block: Vec<Statement>) {
+        let new_symbols = self.symbols.new_scope();
+        let old_symbols = std::mem::replace(&mut self.symbols, new_symbols);
         for statement in block {
             self.compile_statement(statement);
         }
+        self.symbols = old_symbols;
     }
 
     fn compile_function_item(&mut self, fn_item: FunctionItem) -> ValueRef {
@@ -213,6 +250,9 @@ impl<'a> FunctionCompiler<'a> {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
+            Expression::Binary(op, lhs, rhs) if op == BinOp::Range => {
+                self.compile_range(*lhs, *rhs)
+            }
             Expression::Binary(op, lhs, rhs) => self.compile_binary(op, *lhs, *rhs),
             Expression::Member(member) => self.compile_get_property(member),
             Expression::Call(call) => self.compile_call(call),
@@ -354,44 +394,89 @@ impl<'a> FunctionCompiler<'a> {
             _ => unimplemented!("{:?}", op),
         }
     }
+
+    fn compile_range(&mut self, lhs: Expression, rhs: Expression) -> ValueRef {
+        let begin = self.compile_expression(lhs);
+        let end = self.compile_expression(rhs);
+        self.builder.range(begin, end)
+    }
 }
 
+// #[derive(Debug, Clone)]
+// struct SymbolTable {
+//     parent: Option<Box<SymbolTable>>,
+//     symbols: BTreeMap<String, ValueRef>,
+// }
+
+// impl SymbolTable {
+//     fn new() -> Self {
+//         SymbolTable {
+//             parent: None,
+//             symbols: BTreeMap::new(),
+//         }
+//     }
+
+//     fn is_top_level(&self) -> bool {
+//         self.parent.is_none()
+//     }
+
+//     fn get(&self, name: &str) -> Option<ValueRef> {
+//         if let Some(value) = self.symbols.get(name) {
+//             return Some(value.clone());
+//         }
+//         if let Some(parent) = &self.parent {
+//             return parent.get(name);
+//         }
+//         None
+//     }
+
+//     fn declare(&mut self, name: impl Into<String>, value: ValueRef) {
+//         self.symbols.insert(name.into(), value);
+//     }
+
+//     fn new_scope(&self) -> SymbolTable {
+//         Self {
+//             parent: Some(Box::new(self.clone())),
+//             symbols: BTreeMap::new(),
+//         }
+//     }
+// }
+
 #[derive(Debug, Clone)]
-struct SymbolTable {
-    parent: Option<Box<SymbolTable>>,
+pub struct SymbolNode {
+    parent: Option<SymbolTable>,
     symbols: BTreeMap<String, ValueRef>,
 }
 
+#[derive(Debug, Clone)]
+pub struct SymbolTable(Rc<RefCell<SymbolNode>>);
+
 impl SymbolTable {
     fn new() -> Self {
-        SymbolTable {
+        SymbolTable(Rc::new(RefCell::new(SymbolNode {
             parent: None,
             symbols: BTreeMap::new(),
-        }
-    }
-
-    fn is_top_level(&self) -> bool {
-        self.parent.is_none()
+        })))
     }
 
     fn get(&self, name: &str) -> Option<ValueRef> {
-        if let Some(value) = self.symbols.get(name) {
+        if let Some(value) = self.0.borrow().symbols.get(name) {
             return Some(value.clone());
         }
-        if let Some(parent) = &self.parent {
+        if let Some(parent) = &self.0.borrow().parent {
             return parent.get(name);
         }
         None
     }
 
     fn declare(&mut self, name: impl Into<String>, value: ValueRef) {
-        self.symbols.insert(name.into(), value);
+        self.0.borrow_mut().symbols.insert(name.into(), value);
     }
 
     fn new_scope(&self) -> SymbolTable {
-        Self {
-            parent: Some(Box::new(self.clone())),
+        SymbolTable(Rc::new(RefCell::new(SymbolNode {
+            parent: Some(self.clone()),
             symbols: BTreeMap::new(),
-        }
+        })))
     }
 }

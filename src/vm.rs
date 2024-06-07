@@ -27,7 +27,6 @@ impl std::fmt::Display for RuntimeError {
 
 impl std::error::Error for RuntimeError {}
 
-
 pub struct Environment {
     symbols: HashMap<String, Value>,
 }
@@ -166,9 +165,9 @@ impl Evaluator {
                         ValueRef::Function(id) => {
                             let func = module.get_function(*id);
 
-                            let args: Vec<Value> = args
+                            let args: Vec<&Value> = args
                                 .iter()
-                                .map(|arg| self.stack.get_value(*arg).clone())
+                                .map(|arg| self.stack.get_value(*arg))
                                 .collect();
 
                             self.stack.push_frame(StackFrame {
@@ -177,7 +176,7 @@ impl Evaluator {
 
                             for arg in args {
                                 // println!("on call, arg: {:?}", &arg);
-                                self.stack.insert_argument(arg);
+                                self.stack.insert_argument(*arg);
                             }
                             let ret = self.eval_function(func, module)?;
                             // println!("on call, ret: {:?}", &ret);
@@ -185,7 +184,7 @@ impl Evaluator {
                             self.stack.pop_frame();
 
                             self.stack
-                                .set_value(*result, ret.clone().unwrap_or_default());
+                                .set_value(*result, ret.unwrap_or_default());
                         }
                         _ => unreachable!("must call a function"),
                     },
@@ -201,6 +200,11 @@ impl Evaluator {
                     Instruction::LoadArg { index, result } => {
                         let value = self.stack.get_argument(*index);
                         self.stack.set_value(*result, value.clone());
+                    }
+                    Instruction::Range { begin, end, result } => {
+                        let value = 
+
+                        self.stack.set_value(*result, value);
                     }
                     _ => unimplemented!("unimplemented: {inst:?}"),
                 }
@@ -287,7 +291,19 @@ where
     fn and(&self, other: &Self) -> Result<Self, RuntimeError>;
     fn or(&self, other: &Self) -> Result<Self, RuntimeError>;
     fn not(&self) -> Result<Self, RuntimeError>;
-    // fn call(&self, args: &[Self]) -> Result<Option<Self>, RuntimeError>;
+
+    fn call(&self, args: &[Value]) -> Result<Option<Self>, RuntimeError> {
+        return Err(RuntimeError::invalid_operation("unimplement"));
+    }
+
+    fn call_member(
+        &self,
+        member: &str,
+        this: &mut Value,
+        args: &[Value],
+    ) -> Result<Option<Self>, RuntimeError> {
+        return Err(RuntimeError::invalid_operation("unimplement"));
+    }
 }
 
 #[cfg(test)]
@@ -310,7 +326,10 @@ mod tests {
             return fib(n - 1) + fib(n - 2);
         }
 
-        return fib(20);
+        let sum = 0;
+        for i in 0..=10 {
+            sum += i;
+        }
         "#;
 
         let retval = eval.eval(&script).unwrap();

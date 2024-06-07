@@ -123,6 +123,22 @@ pub trait InstBuilder {
         self.control_flow_graph_mut()
             .emit(Instruction::Return { value });
     }
+
+    fn iterate_next(&mut self, iter: ValueRef) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.control_flow_graph_mut()
+            .emit(Instruction::IterateNext { result, iter });
+
+        result
+    }
+
+    fn range(&mut self, begin: ValueRef, end: ValueRef) -> ValueRef {
+        let result = self.make_inst_value();
+        self.control_flow_graph_mut().emit(Instruction::Range { begin, end, result });
+        result 
+    }
+
 }
 
 pub struct FunctionBuilder<'a> {
