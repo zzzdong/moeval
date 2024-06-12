@@ -46,21 +46,23 @@ pub trait InstBuilder {
     fn get_property(&mut self, object: ValueRef, property: &str) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.control_flow_graph_mut().emit(Instruction::PropertyGet {
-            result,
-            object,
-            property: property.to_string(),
-        });
+        self.control_flow_graph_mut()
+            .emit(Instruction::PropertyGet {
+                result,
+                object,
+                property: property.to_string(),
+            });
 
         result
     }
 
     fn set_property(&mut self, object: ValueRef, property: &str, value: ValueRef) {
-        self.control_flow_graph_mut().emit(Instruction::PropertySet {
-            object,
-            property: property.to_string(),
-            value,
-        });
+        self.control_flow_graph_mut()
+            .emit(Instruction::PropertySet {
+                object,
+                property: property.to_string(),
+                value,
+            });
     }
 
     fn call_property(
@@ -71,11 +73,12 @@ pub trait InstBuilder {
     ) -> ValueRef {
         let result = self.make_inst_value();
 
-        self.control_flow_graph_mut().emit(Instruction::PropertyCall {
-            object,
-            property,
-            args,
-        });
+        self.control_flow_graph_mut()
+            .emit(Instruction::PropertyCall {
+                object,
+                property,
+                args,
+            });
 
         result
     }
@@ -116,7 +119,8 @@ pub trait InstBuilder {
     }
 
     fn br(&mut self, target: BlockId) {
-        self.control_flow_graph_mut().emit(Instruction::Br { target });
+        self.control_flow_graph_mut()
+            .emit(Instruction::Br { target });
     }
 
     fn return_(&mut self, value: Option<ValueRef>) {
@@ -124,21 +128,51 @@ pub trait InstBuilder {
             .emit(Instruction::Return { value });
     }
 
-    fn iterate_next(&mut self, iter: ValueRef) -> ValueRef {
+    fn make_iterator(&mut self, iter: ValueRef) -> ValueRef {
         let result = self.make_inst_value();
 
         self.control_flow_graph_mut()
-            .emit(Instruction::IterateNext { result, iter });
+            .emit(Instruction::MakeIterator { iter, result });
+
+        result
+    }
+
+    fn iterate_next(&mut self, iter: ValueRef, next: ValueRef, after_blk: BlockId) -> ValueRef {
+        let result = self.make_inst_value();
+
+        self.control_flow_graph_mut()
+            .emit(Instruction::IterateNext {
+                iter,
+                next,
+                after_blk,
+            });
 
         result
     }
 
     fn range(&mut self, begin: ValueRef, end: ValueRef) -> ValueRef {
         let result = self.make_inst_value();
-        self.control_flow_graph_mut().emit(Instruction::Range { begin, end, result });
-        result 
+        self.control_flow_graph_mut()
+            .emit(Instruction::Range { begin, end, result });
+        result
     }
 
+    fn new_array(&mut self, size: Option<usize>) -> ValueRef {
+        let array = self.make_inst_value();
+        self.control_flow_graph_mut()
+            .emit(Instruction::NewArray { array, size });
+        array
+    }
+
+    fn array_push(&mut self, array: ValueRef, value: ValueRef) -> ValueRef {
+        self.control_flow_graph_mut()
+            .emit(Instruction::ArrayPush { array, value });
+        array
+    }
+
+    // fn new_object(&mut self) -> ValueRef {
+
+    // }
 }
 
 pub struct FunctionBuilder<'a> {

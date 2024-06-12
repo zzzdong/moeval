@@ -1,4 +1,4 @@
-use crate::{codegen::Codegen, instruction::Module, irbuilder::InstBuilder, parser::ParseError};
+use crate::{codegen::Codegen, instruction::Module, parser::ParseError};
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -29,7 +29,7 @@ impl Compiler {
     pub fn compile(input: &str) -> Result<Module, CompileError> {
         // 解析输入
         let ast = crate::parser::parse_file(input)?;
-        println!("{:#?}", ast);
+        // println!("{:#?}", ast);
         // // 语义分析
         // let ast = crate::semantics::analyze(ast)?;
 

@@ -11,7 +11,7 @@ pub struct Program {
 
 impl Program {
     pub fn new() -> Program {
-        return Program { stmts: Vec::new() };
+        Program { stmts: Vec::new() }
     }
 }
 
@@ -143,7 +143,6 @@ pub enum Expression {
     Index(IndexExpression),
     Slice(SliceExpression),
     Try(Box<Expression>),
-    
 }
 
 #[derive(Debug, Clone)]

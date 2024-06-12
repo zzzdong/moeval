@@ -9,16 +9,16 @@ use pest::{
 use crate::ast::*;
 
 #[derive(Debug)]
-pub struct ParseError(pest::error::Error<Rule>);
+pub struct ParseError(Box<pest::error::Error<Rule>>);
 
 impl ParseError {
     pub fn with_message(span: Span, message: impl ToString) -> Self {
-        Self(pest::error::Error::new_from_span(
+        Self(Box::new(pest::error::Error::new_from_span(
             pest::error::ErrorVariant::CustomError {
                 message: message.to_string(),
             },
             span,
-        ))
+        )))
     }
 }
 
@@ -30,7 +30,7 @@ impl std::fmt::Display for ParseError {
 
 impl From<pest::error::Error<Rule>> for ParseError {
     fn from(e: pest::error::Error<Rule>) -> Self {
-        Self(e)
+        Self(Box::new(e))
     }
 }
 
@@ -50,7 +50,7 @@ pub fn parse_file(input: &str) -> Result<Program> {
 }
 
 pub fn parse_expression_input(input: &str) -> Result<Expression> {
-    let mut pairs = PestParser::parse(Rule::expression, input)?;
+    let pairs = PestParser::parse(Rule::expression, input)?;
     parse_expression_pairs(pairs)
 }
 
@@ -161,7 +161,7 @@ fn parse_item_statement(pair: Pair<Rule>) -> Result<ItemStatement> {
     match stat.as_rule() {
         Rule::enum_item => Ok(ItemStatement::Enum(parse_enum_item(stat))),
         Rule::struct_item => Ok(ItemStatement::Struct(parse_struct_item(stat))),
-        Rule::fn_item => parse_function_item(stat).map(|item| ItemStatement::Fn(item)),
+        Rule::fn_item => parse_function_item(stat).map(ItemStatement::Fn),
         _ => unreachable!("unknown item statement: {stat:?}"),
     }
 }
@@ -232,11 +232,7 @@ fn parse_function_item(pair: Pair<Rule>) -> Result<FunctionItem> {
         Vec::new()
     };
     let mut return_type = pairs.next().unwrap().into_inner();
-    let return_ty = if let Some(ty) = return_type.next() {
-        Some(parse_type_expression(ty))
-    } else {
-        None
-    };
+    let return_ty = return_type.next().map(parse_type_expression);
 
     let body = parse_block(pairs.next().unwrap())?;
     Ok(FunctionItem {
@@ -629,7 +625,7 @@ fn parse_array(pair: Pair<Rule>) -> Result<ArrayExpression> {
 fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
     println!("==> {:?}", pair);
     let mut pairs = pair.into_inner();
-    
+
     let name = pairs.next().unwrap();
 
     Ok(EnvironmentExpression(name.as_str().to_string()))

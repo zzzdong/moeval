@@ -166,17 +166,21 @@ impl<'a> FunctionCompiler<'a> {
             }
         };
 
-        let iterable = self.compile_expression(iterable);
-
         let loop_blk = self.builder.create_block(None);
         let after_blk = self.builder.create_block(None);
 
-        let iter_ret = self.builder.iterate_next(iterable);
-        let iter_has_next = self.builder.make_inst_value();
-
+        let iterable = self.compile_expression(iterable);
+        let iterable = self.builder.make_iterator(iterable);
         self.builder.br(loop_blk);
 
         self.builder.switch_to_block(loop_blk);
+        self.builder.iterate_next(iterable, pat, after_blk);
+
+        self.compile_block(body);
+
+        self.builder.br(loop_blk);
+
+        self.builder.switch_to_block(after_blk);
     }
 
     fn compile_block(&mut self, block: Vec<Statement>) {
@@ -226,7 +230,7 @@ impl<'a> FunctionCompiler<'a> {
 
         let builder = FunctionBuilder::new(&mut func);
 
-        let mut compiler = FunctionCompiler::new(builder, symbols, &mut self.module);
+        let mut compiler = FunctionCompiler::new(builder, symbols, self.module);
 
         let entry = compiler.builder.create_block(None);
         compiler.builder.set_entry_block(entry);
@@ -250,14 +254,13 @@ impl<'a> FunctionCompiler<'a> {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
-            Expression::Binary(op, lhs, rhs) if op == BinOp::Range => {
-                self.compile_range(*lhs, *rhs)
-            }
+            Expression::Binary(BinOp::Range, lhs, rhs) => self.compile_range(*lhs, *rhs),
             Expression::Binary(op, lhs, rhs) => self.compile_binary(op, *lhs, *rhs),
             Expression::Member(member) => self.compile_get_property(member),
             Expression::Call(call) => self.compile_call(call),
             Expression::Assign(assign) => self.compile_assign(assign),
             Expression::Closure(closure) => self.compile_closure(closure),
+            Expression::Array(array) => self.compile_array(array),
             _ => unimplemented!("{:?}", expr),
         }
     }
@@ -345,6 +348,18 @@ impl<'a> FunctionCompiler<'a> {
         let ClosureExpression { params, body } = expr;
 
         self.compile_function(None, params, body)
+    }
+
+    fn compile_array(&mut self, expr: ArrayExpression) -> ValueRef {
+        let ArrayExpression(elements) = expr;
+        let array = self.builder.new_array(Some(elements.len()));
+
+        for element in elements {
+            let elem = self.compile_expression(element);
+            self.builder.array_push(array, elem);
+        }
+
+        array
     }
 
     fn compile_literal(&mut self, literal: LiteralExpression) -> ValueRef {
@@ -461,7 +476,7 @@ impl SymbolTable {
 
     fn get(&self, name: &str) -> Option<ValueRef> {
         if let Some(value) = self.0.borrow().symbols.get(name) {
-            return Some(value.clone());
+            return Some(*value);
         }
         if let Some(parent) = &self.0.borrow().parent {
             return parent.get(name);

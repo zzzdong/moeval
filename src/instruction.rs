@@ -83,15 +83,28 @@ pub enum Instruction {
     Br {
         target: BlockId,
     },
-    IterateNext {
-        result: ValueRef,
+    MakeIterator {
         iter: ValueRef,
+        result: ValueRef,
+    },
+    IterateNext {
+        iter: ValueRef,
+        next: ValueRef,
+        after_blk: BlockId,
     },
     Range {
         begin: ValueRef,
         end: ValueRef,
         result: ValueRef,
-    }
+    },
+    NewArray {
+        array: ValueRef,
+        size: Option<usize>,
+    },
+    ArrayPush {
+        array: ValueRef,
+        value: ValueRef,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
