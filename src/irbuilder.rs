@@ -5,7 +5,7 @@ pub trait InstBuilder {
 
     fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph;
 
-    fn make_constant(&mut self, value: crate::value::Value) -> ValueId {
+    fn make_constant(&mut self, value: crate::value::Primitive) -> ValueId {
         self.control_flow_graph_mut().make_constant(value)
     }
 
@@ -65,12 +65,7 @@ pub trait InstBuilder {
             });
     }
 
-    fn call_property(
-        &mut self,
-        object: ValueId,
-        property: String,
-        args: Vec<ValueId>,
-    ) -> ValueId {
+    fn call_property(&mut self, object: ValueId, property: String, args: Vec<ValueId>) -> ValueId {
         let result = self.make_inst_value();
 
         self.control_flow_graph_mut()

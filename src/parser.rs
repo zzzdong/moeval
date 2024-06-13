@@ -623,7 +623,6 @@ fn parse_array(pair: Pair<Rule>) -> Result<ArrayExpression> {
 }
 
 fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
-    println!("==> {:?}", pair);
     let mut pairs = pair.into_inner();
 
     let name = pairs.next().unwrap();

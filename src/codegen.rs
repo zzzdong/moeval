@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::ast::*;
 use crate::instruction::{Function, FunctionId, Module, Opcode, ValueId};
 use crate::irbuilder::{FunctionBuilder, InstBuilder};
-use crate::value::Value;
+use crate::value::Primitive;
 
 pub struct Codegen {
     symbol_table: SymbolTable,
@@ -137,12 +137,12 @@ impl<'a> FunctionCompiler<'a> {
         self.compile_block(then_branch);
         self.builder.br(next_blk);
 
-        else_branch.map(|block| {
+        if let Some(block) = else_branch {
             let else_blk = else_blk.unwrap();
             self.builder.switch_to_block(else_blk);
             self.compile_block(block);
             self.builder.br(next_blk);
-        });
+        }
 
         self.builder.switch_to_block(next_blk);
     }
@@ -364,11 +364,11 @@ impl<'a> FunctionCompiler<'a> {
 
     fn compile_literal(&mut self, literal: LiteralExpression) -> ValueId {
         let value = match literal {
-            LiteralExpression::Boolean(b) => Value::Boolean(b),
-            LiteralExpression::Integer(i) => Value::Integer(i),
-            LiteralExpression::Float(f) => Value::Float(f),
-            LiteralExpression::Char(c) => Value::Char(c),
-            LiteralExpression::String(s) => Value::String(s),
+            LiteralExpression::Boolean(b) => Primitive::Boolean(b),
+            LiteralExpression::Integer(i) => Primitive::Integer(i),
+            LiteralExpression::Float(f) => Primitive::Float(f),
+            LiteralExpression::Char(c) => Primitive::Char(c),
+            LiteralExpression::String(s) => Primitive::String(s),
         };
 
         self.builder.make_constant(value)

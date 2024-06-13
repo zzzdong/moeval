@@ -1,11 +1,23 @@
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell, RefMut},
     fmt::{self, Debug},
-    ops,
+    ops::{self, Deref},
     rc::Rc,
 };
 
 use crate::vm::{Operate, RuntimeError};
+
+#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
+pub enum Primitive {
+    Boolean(bool),
+    Byte(u8),
+    Integer(i64),
+    Float(f64),
+    Char(char),
+    String(String),
+    #[default]
+    Undefined,
+}
 
 #[derive(Default)]
 pub enum Value {
@@ -17,10 +29,10 @@ pub enum Value {
     String(String),
     #[default]
     Undefined,
-    Array(Vec<Value>),
-    Object(Rc<RefCell<Box<dyn Object>>>),
-    Function(Rc<RefCell<Box<dyn Fn(&[Value]) -> Result<Option<Value>, RuntimeError>>>>),
-    Iterator(Box<dyn Iterator<Item = Value>>),
+    Array(Vec<ValueRef>),
+    Object(Box<dyn Object>),
+    Function(Box<dyn Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError>>),
+    Iterator(Box<dyn Iterator<Item = ValueRef>>),
     Range(Range),
 }
 
@@ -71,22 +83,58 @@ impl fmt::Display for Value {
     }
 }
 
-impl Clone for Value {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Boolean(arg0) => Self::Boolean(*arg0),
-            Self::Byte(arg0) => Self::Byte(*arg0),
-            Self::Integer(arg0) => Self::Integer(*arg0),
-            Self::Float(arg0) => Self::Float(*arg0),
-            Self::Char(arg0) => Self::Char(*arg0),
-            Self::String(arg0) => Self::String(arg0.clone()),
-            Self::Undefined => Self::Undefined,
-            Self::Array(arg0) => Self::Array(arg0.clone()),
-            Self::Object(arg0) => Self::Object(arg0.clone()),
-            Self::Range(arg0) => Self::Range(*arg0),
-            Self::Function(arg0) => Self::Function(arg0.clone()),
-            Self::Iterator(arg0) => unimplemented!(),
+impl From<Primitive> for Value {
+    fn from(value: Primitive) -> Self {
+        match value {
+            Primitive::Boolean(value) => Value::Boolean(value),
+            Primitive::Byte(value) => Value::Byte(value),
+            Primitive::Integer(value) => Value::Integer(value),
+            Primitive::Float(value) => Value::Float(value),
+            Primitive::Char(value) => Value::Char(value),
+            Primitive::String(value) => Value::String(value),
+            Primitive::Undefined => Value::Undefined,
         }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Value::Boolean(value)
+    }
+}
+impl From<u8> for Value {
+    fn from(value: u8) -> Self {
+        Value::Byte(value)
+    }
+}
+
+impl From<i32> for Value {
+    fn from(value: i32) -> Self {
+        Value::Integer(value as i64)
+    }
+}
+
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Value::Integer(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::Float(value)
+    }
+}
+
+impl From<char> for Value {
+    fn from(value: char) -> Self {
+        Value::Char(value)
+    }
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::String(value)
     }
 }
 
@@ -99,7 +147,6 @@ impl PartialEq for Value {
             (Self::Float(l0), Self::Float(r0)) => l0 == r0,
             (Self::Char(l0), Self::Char(r0)) => l0 == r0,
             (Self::String(l0), Self::String(r0)) => l0 == r0,
-            (Self::Object(l0), Self::Object(r0)) => l0.as_ptr() == r0.as_ptr(),
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
     }
@@ -182,22 +229,44 @@ impl ops::Sub<Value> for Value {
     }
 }
 
-impl From<i64> for Value {
-    fn from(value: i64) -> Self {
-        Value::Integer(value)
+impl TryInto<i64> for Value {
+    type Error = RuntimeError;
+
+    fn try_into(self) -> Result<i64, Self::Error> {
+        match self {
+            Value::Integer(i64) => Ok(i64),
+            _ => Err(RuntimeError::invalid_operation(
+                "can only convert integer to i64",
+            )),
+        }
+    }
+}
+
+impl TryInto<i64> for &Value {
+    type Error = RuntimeError;
+
+    fn try_into(self) -> Result<i64, Self::Error> {
+        match self {
+            Value::Integer(i) => Ok(*i),
+            _ => Err(RuntimeError::invalid_operation(
+                "can only convert integer to i64",
+            )),
+        }
     }
 }
 
 pub trait Object: Debug {
-    fn call(&mut self, args: &[Value]) -> Result<Option<Value>, RuntimeError> {
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation("Object is not callable"))
     }
-    fn property(&mut self, args: &[Value]) -> Result<Option<Value>, RuntimeError> {
+    fn property(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation(
             "Object property not supported",
         ))
     }
-    fn make_iterator(&mut self) -> Result<Option<Box<dyn Iterator<Item = Value>>>, RuntimeError> {
+    fn make_iterator(
+        &mut self,
+    ) -> Result<Option<Box<dyn Iterator<Item = ValueRef>>>, RuntimeError> {
         Err(RuntimeError::invalid_operation("Object is not iterator"))
     }
 }
@@ -208,12 +277,9 @@ impl Operate for Value {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
             (Value::String(l), Value::String(r)) => Ok(Value::String(format!("{}{}", l, r))),
-            _ => {
-                println!("Invalid operands for addition, lhs:{self:?}, rhs:{other:?}");
-                Err(crate::vm::RuntimeError::invalid_operation(
-                    "Invalid operands for addition",
-                ))
-            }
+            _ => Err(crate::vm::RuntimeError::invalid_operation(
+                "Invalid operands for addition",
+            )),
         }
     }
 
@@ -365,10 +431,10 @@ impl Operate for Value {
         }
     }
 
-    fn call(&mut self, args: &[Value]) -> Result<Option<Value>, crate::vm::RuntimeError> {
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, crate::vm::RuntimeError> {
         match self {
-            Value::Object(ref o) => o.as_ref().borrow_mut().call(args),
-            Value::Function(ref f) => f.as_ref().borrow_mut()(args),
+            Value::Object(ref mut o) => o.call(args),
+            Value::Function(ref mut f) => f(args),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for function call",
             )),
@@ -378,26 +444,77 @@ impl Operate for Value {
     fn call_member(
         &mut self,
         member: &str,
-        this: &mut Value,
-        args: &[Value],
+        this: ValueRef,
+        args: &[ValueRef],
     ) -> Result<Option<Value>, crate::vm::RuntimeError> {
         match self {
-            Value::Object(ref o) => o.as_ref().borrow_mut().call(args),
+            Value::Object(ref mut o) => o.call(args),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for call memeber",
             )),
         }
     }
 
-    fn iterator(&self) -> Result<Option<Box<dyn Iterator<Item = Value>>>, crate::vm::RuntimeError> {
+    fn iterator(
+        &mut self,
+    ) -> Result<Option<Box<dyn Iterator<Item = ValueRef>>>, crate::vm::RuntimeError> {
         match self {
-            Value::Object(ref o) => o.as_ref().borrow_mut().make_iterator(),
+            Value::Object(ref mut o) => o.make_iterator(),
             Value::Array(a) => Ok(Some(Box::new(a.clone().into_iter()))),
             Value::Range(r) => Ok(Some(Box::new(RangeIterator::new(r)?))),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for iterator call",
             )),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct ValueRef(Rc<RefCell<Value>>);
+
+impl ValueRef {
+    pub fn new(value: Value) -> Self {
+        ValueRef(Rc::new(RefCell::new(value)))
+    }
+
+    pub fn borrow(&self) -> Ref<Value> {
+        self.0.as_ref().borrow()
+    }
+
+    pub fn borrow_mut(&self) -> RefMut<Value> {
+        self.0.borrow_mut()
+    }
+
+    pub fn as_ptr(&self) -> *mut Value {
+        self.0.as_ptr()
+    }
+
+    pub fn take(self) -> Value {
+        self.0.take()
+    }
+}
+
+impl Default for ValueRef {
+    fn default() -> Self {
+        ValueRef::new(Value::default())
+    }
+}
+
+impl PartialEq<Value> for ValueRef {
+    fn eq(&self, other: &Value) -> bool {
+        PartialEq::eq(self.borrow().deref(), other)
+    }
+}
+
+impl fmt::Display for ValueRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("{}", self.borrow().deref()))
+    }
+}
+
+impl From<Value> for ValueRef {
+    fn from(value: Value) -> Self {
+        ValueRef::new(value)
     }
 }
 
@@ -408,9 +525,12 @@ pub(crate) struct Range {
 }
 
 impl Range {
-    pub fn new(begin: Value, end: Value) -> Result<Self, RuntimeError> {
-        match (begin, end) {
-            (Value::Integer(begin), Value::Integer(end)) => Ok(Self { begin, end }),
+    pub fn new(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+        match (begin.borrow().deref(), end.borrow().deref()) {
+            (Value::Integer(begin), Value::Integer(end)) => Ok(Self {
+                begin: *begin,
+                end: *end,
+            }),
             _ => Err(RuntimeError::invalid_operation(
                 "Invalid operands for range",
             )),
@@ -437,9 +557,9 @@ impl RangeIterator {
 }
 
 impl Iterator for RangeIterator {
-    type Item = Value;
+    type Item = ValueRef;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(Value::Integer)
+        self.inner.next().map(|v| ValueRef::new(Value::Integer(v)))
     }
 }

@@ -1,11 +1,13 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 
 use log::debug;
 
+use crate::value::{Range, ValueRef};
 use crate::{
     compiler::Compiler,
     instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueId},
-    value::{Range, Value},
+    value::Value,
 };
 
 #[derive(Debug)]
@@ -36,7 +38,7 @@ impl std::fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 pub struct Environment {
-    symbols: HashMap<String, Value>,
+    symbols: HashMap<String, ValueRef>,
 }
 
 impl Environment {
@@ -47,18 +49,18 @@ impl Environment {
     }
 
     pub fn define(&mut self, name: impl ToString, value: Value) {
-        self.symbols.insert(name.to_string(), value);
+        self.symbols.insert(name.to_string(), ValueRef::new(value));
     }
 
     pub fn define_function<F>(&mut self, name: impl ToString, func: F)
     where
-        F: Fn(&[Value]) -> Result<Option<Value>, RuntimeError> + 'static,
+        F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
     {
-        self.define(name, Value::Function(Rc::new(RefCell::new(Box::new(func)))));
+        self.define(name, Value::Function(Box::new(func)));
     }
 
-    pub fn get(&self, name: impl AsRef<str>) -> Option<&Value> {
-        self.symbols.get(name.as_ref())
+    pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
+        self.symbols.get(name.as_ref()).cloned()
     }
 }
 
@@ -93,28 +95,20 @@ impl Stack {
         self.frames.last_mut()
     }
 
-    fn get_value(&self, index: ValueId) -> &Value {
-        self.top().unwrap().variables.get_value(index)
+    fn load_value(&self, index: ValueId) -> ValueRef {
+        self.top().unwrap().variables.load_value(index)
     }
 
-    fn get_value_mut(&mut self, index: ValueId) -> &mut Value {
-        self.top_mut().unwrap().variables.get_value_mut(index)
+    fn store_value(&mut self, index: ValueId, value: ValueRef) {
+        self.top_mut().unwrap().variables.store_value(index, value);
     }
 
-    fn take_value(&mut self, index: ValueId) -> Value {
-        self.top_mut().unwrap().variables.take_value(index)
+    fn load_argument(&self, index: usize) -> ValueRef {
+        self.top().unwrap().variables.load_arg(index)
     }
 
-    fn set_value(&mut self, index: ValueId, value: Value) {
-        self.top_mut().unwrap().variables.set_value(index, value);
-    }
-
-    fn get_argument(&self, index: usize) -> Value {
-        self.top().unwrap().variables.get_arg(index)
-    }
-
-    fn insert_argument(&mut self, value: Value) {
-        self.top_mut().unwrap().variables.insert_arg(value);
+    fn store_argument(&mut self, value: ValueRef) {
+        self.top_mut().unwrap().variables.store_arg(value);
     }
 }
 
@@ -140,6 +134,7 @@ impl Evaluator {
         self.stack.push_frame(StackFrame { variables });
 
         self.eval_function(dfg, &module, env)
+            .map(|r| r.map(|v| v.take()))
     }
 
     pub fn eval_function(
@@ -147,14 +142,14 @@ impl Evaluator {
         dfg: &ControlFlowGraph,
         module: &Module,
         env: &Environment,
-    ) -> Result<Option<Value>, RuntimeError> {
+    ) -> Result<Option<ValueRef>, RuntimeError> {
         let mut next_block = dfg.entry();
         while let Some(block) = next_block.take() {
             for inst in dfg.instructions(block) {
                 debug!("-> {inst:?}");
                 match inst {
                     Instruction::LoadEnv { result, name } => match env.get(name) {
-                        Some(value) => self.stack.set_value(*result, value.clone()),
+                        Some(value) => self.stack.store_value(*result, value),
                         None => {
                             return Err(RuntimeError::symbol_not_found(name));
                         }
@@ -168,10 +163,11 @@ impl Evaluator {
                         then_blk,
                         else_blk,
                     } => {
-                        let cond = self.stack.get_value(*condition);
-                        match cond {
+                        let cond = self.stack.load_value(*condition);
+                        let cond = cond.borrow();
+                        match *cond {
                             Value::Boolean(b) => {
-                                if *b {
+                                if b {
                                     next_block = Some(*then_blk);
                                     break;
                                 } else {
@@ -188,8 +184,15 @@ impl Evaluator {
                         lhs,
                         rhs,
                     } => {
-                        let lhs = self.stack.get_value(*lhs);
-                        let rhs = self.stack.get_value(*rhs);
+                        let lhs = self.stack.load_value(*lhs);
+                        let rhs = self.stack.load_value(*rhs);
+
+                        let lhs = lhs.borrow();
+                        let rhs = rhs.borrow();
+
+                        let lhs = lhs.deref();
+                        let rhs = rhs.deref();
+
                         let ret = match op {
                             Opcode::Add => Operate::add(lhs, rhs),
                             Opcode::Sub => Operate::sub(lhs, rhs),
@@ -207,73 +210,67 @@ impl Evaluator {
                             _ => unreachable!("unsupported op {op:?}"),
                         };
 
-                        self.stack.set_value(*result, ret?);
+                        self.stack.store_value(*result, ret.map(ValueRef::new)?);
                     }
                     Instruction::Call { func, args, result } => match func {
                         ValueId::Function(id) => {
                             let func = module.get_function(*id);
 
-                            let args: Vec<Value> = args
-                                .iter()
-                                .map(|arg| self.stack.get_value(*arg))
-                                .cloned()
-                                .collect();
+                            let args: Vec<ValueRef> =
+                                args.iter().map(|arg| self.stack.load_value(*arg)).collect();
 
                             self.stack.push_frame(StackFrame {
                                 variables: Variables::from_cfg(func),
                             });
 
                             for arg in args {
-                                // println!("on call, arg: {:?}", &arg);
-                                self.stack.insert_argument(arg.clone());
+                                self.stack.store_argument(arg);
                             }
                             let ret = self.eval_function(func, module, env)?;
-                            // println!("on call, ret: {:?}", &ret);
 
                             self.stack.pop_frame();
 
-                            self.stack.set_value(*result, ret.unwrap_or_default());
+                            self.stack.store_value(*result, ret.unwrap_or_default());
                         }
                         ValueId::Inst(_) => {
-                            let args: Vec<Value> = args
-                                .iter()
-                                .map(|arg| self.stack.get_value(*arg))
-                                .cloned()
-                                .collect();
+                            let args: Vec<ValueRef> =
+                                args.iter().map(|arg| self.stack.load_value(*arg)).collect();
 
-                            let func = self.stack.get_value_mut(*func);
+                            let func = self.stack.load_value(*func);
+                            let mut func = func.borrow_mut();
 
                             if let Some(ret) = func.call(&args)? {
-                                self.stack.set_value(*result, ret);
+                                self.stack.store_value(*result, ValueRef::new(ret));
                             }
                         }
                         _ => unreachable!("must call a function"),
                     },
                     Instruction::Return { value } => {
-                        let value = value.map(|v| self.stack.get_value(v)).cloned();
+                        let value = value.map(|v| self.stack.load_value(v));
                         return Ok(value);
                     }
                     Instruction::Store { object, value } => {
-                        let value = self.stack.get_value(*value);
-                        self.stack.set_value(*object, value.clone());
+                        let value = self.stack.load_value(*value);
+                        self.stack.store_value(*object, value.clone());
                     }
                     Instruction::LoadArg { index, result } => {
-                        let value = self.stack.get_argument(*index);
-                        self.stack.set_value(*result, value.clone());
+                        let value = self.stack.load_argument(*index);
+                        self.stack.store_value(*result, value.clone());
                     }
                     Instruction::Range { begin, end, result } => {
-                        let value = Range::new(
-                            self.stack.get_value(*begin).clone(),
-                            self.stack.get_value(*end).clone(),
-                        )?;
-                        self.stack.set_value(*result, Value::Range(value));
+                        let value =
+                            Range::new(self.stack.load_value(*begin), self.stack.load_value(*end))?;
+                        self.stack
+                            .store_value(*result, ValueRef::new(Value::Range(value)));
                     }
                     Instruction::MakeIterator { iter, result } => {
-                        let iter = self.stack.get_value(*iter);
+                        let iter = self.stack.load_value(*iter);
+                        let mut iter = iter.borrow_mut();
 
                         match iter.iterator()? {
                             Some(iterator) => {
-                                self.stack.set_value(*result, Value::Iterator(iterator));
+                                self.stack
+                                    .store_value(*result, ValueRef::new(Value::Iterator(iterator)));
                             }
                             None => {
                                 return Err(RuntimeError::invalid_operation(
@@ -287,12 +284,13 @@ impl Evaluator {
                         next,
                         after_blk,
                     } => {
-                        let iterator = self.stack.get_value_mut(*iter);
+                        let iterator = self.stack.load_value(*iter);
+                        let mut iterator = iterator.borrow_mut();
 
-                        match iterator {
+                        match iterator.deref_mut() {
                             Value::Iterator(iterator) => match iterator.next() {
                                 Some(element) => {
-                                    self.stack.set_value(*next, element);
+                                    self.stack.store_value(*next, element);
                                 }
                                 None => {
                                     next_block = Some(*after_blk);
@@ -307,22 +305,23 @@ impl Evaluator {
                         }
                     }
                     Instruction::NewArray { array, size } => {
-                        let arr: Vec<Value> = match size {
+                        let arr: Vec<ValueRef> = match size {
                             Some(s) => Vec::with_capacity(*s),
                             None => Vec::new(),
                         };
 
-                        self.stack.set_value(*array, Value::Array(arr));
+                        self.stack
+                            .store_value(*array, ValueRef::new(Value::Array(arr)));
                     }
                     Instruction::ArrayPush { array, value } => {
-                        let element = self.stack.take_value(*value);
-                        let arr = self.stack.get_value_mut(*array);
-                        match arr {
+                        let element = self.stack.load_value(*value);
+                        let arr = self.stack.load_value(*array);
+                        let mut arr = arr.borrow_mut();
+                        match arr.deref_mut() {
                             Value::Array(array) => {
                                 array.push(element);
                             }
                             _ => {
-                                println!("=> {arr:?}");
                                 return Err(RuntimeError::invalid_operation(
                                     "array push: not array",
                                 ));
@@ -340,13 +339,17 @@ impl Evaluator {
 
 #[derive(Debug, Default)]
 struct Variables {
-    constants: Vec<Value>,
-    inst_value: Vec<Value>,
-    stack_value: Vec<Value>,
+    constants: Vec<ValueRef>,
+    inst_value: Vec<ValueRef>,
+    stack_value: Vec<ValueRef>,
 }
 
 impl Variables {
-    fn new(constants: Vec<Value>, inst_value: Vec<Value>, stack_value: Vec<Value>) -> Self {
+    fn new(
+        constants: Vec<ValueRef>,
+        inst_value: Vec<ValueRef>,
+        stack_value: Vec<ValueRef>,
+    ) -> Self {
         Self {
             constants,
             inst_value,
@@ -354,53 +357,42 @@ impl Variables {
         }
     }
 
-    fn insert_arg(&mut self, arg: Value) {
+    fn store_arg(&mut self, arg: ValueRef) {
         self.stack_value.push(arg);
     }
 
-    fn get_arg(&self, index: usize) -> Value {
+    fn load_arg(&self, index: usize) -> ValueRef {
         self.stack_value[index].clone()
     }
 
     fn from_cfg(dfg: &ControlFlowGraph) -> Self {
         let mut values = Vec::new();
         for _ in 0..dfg.inst_values.len() {
-            values.push(Value::default());
+            values.push(ValueRef::new(Value::default()));
         }
 
-        Variables::new(dfg.constants.clone(), values, Vec::new())
+        let constants = dfg
+            .constants
+            .iter()
+            .cloned()
+            .map(|v| ValueRef::new(v.into()))
+            .collect();
+
+        Variables::new(constants, values, Vec::new())
     }
 
-    fn get_value(&self, index: ValueId) -> &Value {
+    fn load_value(&self, index: ValueId) -> ValueRef {
         match index {
-            ValueId::Constant(i) => &self.constants[i],
-            ValueId::Inst(i) => &self.inst_value[i],
+            ValueId::Constant(i) => self.constants[i].clone(),
+            ValueId::Inst(i) => self.inst_value[i].clone(),
             _ => unimplemented!(),
         }
     }
 
-    fn set_value(&mut self, index: ValueId, value: Value) {
+    fn store_value(&mut self, index: ValueId, value: ValueRef) {
         match index {
             ValueId::Constant(i) => self.constants[i] = value,
             ValueId::Inst(i) => self.inst_value[i] = value,
-            _ => unimplemented!(),
-        }
-    }
-
-    fn get_value_mut(&mut self, index: ValueId) -> &mut Value {
-        match index {
-            ValueId::Constant(i) => &mut self.constants[i],
-            ValueId::Inst(i) => &mut self.inst_value[i],
-            _ => unimplemented!(),
-        }
-    }
-
-    fn take_value(&mut self, index: ValueId) -> Value {
-        match index {
-            ValueId::Inst(i) => {
-                std::mem::replace(self.inst_value.get_mut(i).unwrap(), Value::Undefined)
-            }
-            ValueId::Constant(i) => self.constants[i].clone(),
             _ => unimplemented!(),
         }
     }
@@ -423,35 +415,33 @@ pub trait Operate {
     fn or(&self, other: &Value) -> Result<Value, RuntimeError>;
     fn not(&self) -> Result<Value, RuntimeError>;
 
-    fn call(&mut self, args: &[Value]) -> Result<Option<Value>, RuntimeError> {
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation("unimplement"))
     }
 
     fn call_member(
         &mut self,
         member: &str,
-        this: &mut Value,
-        args: &[Value],
+        this: ValueRef,
+        args: &[ValueRef],
     ) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation("unimplement"))
     }
 
-    fn iterator(&self) -> Result<Option<Box<dyn Iterator<Item = Value>>>, RuntimeError> {
-        Err(RuntimeError::invalid_operation("unimplement"))
-    }
-
-    fn iterate_next(&mut self) -> Result<Option<Value>, RuntimeError> {
+    fn iterator(&mut self) -> Result<Option<Box<dyn Iterator<Item = ValueRef>>>, RuntimeError> {
         Err(RuntimeError::invalid_operation("unimplement"))
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
-    fn fib(args: &[Value]) -> Result<Option<Value>, RuntimeError> {
-        let n = args[0].clone();
+    fn fib(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        let n = args[0].borrow();
+
+        let n: i64 = n.deref().try_into()?;
+
         if n < 1 {
             return Ok(Some(0.into()));
         }
@@ -459,13 +449,13 @@ mod tests {
             return Ok(Some(1.into()));
         }
 
-        let a = fib(&[n.clone() - 1])?.unwrap();
-        let b = fib(&[n - 2])?.unwrap();
+        let a = fib(&[ValueRef::new((n - 1).into())])?.unwrap();
+        let b = fib(&[ValueRef::new((n - 2).into())])?.unwrap();
 
         Ok(Some(a + b))
     }
 
-    fn println(args: &[Value]) -> Result<Option<Value>, RuntimeError> {
+    fn println(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         let s = args
             .iter()
             .map(|v| format!("{v}"))
@@ -490,9 +480,9 @@ mod tests {
         return sum;
         "#;
 
-        let retval = eval.eval(script, &env).unwrap();
+        let retval = eval.eval(script, &env).unwrap().unwrap();
 
-        assert_eq!(retval, Some(Value::Integer(55)));
+        assert_eq!(retval, Value::Integer(55));
     }
 
     #[test]
@@ -509,9 +499,9 @@ mod tests {
         return sum;
         "#;
 
-        let retval = eval.eval(script, &env).unwrap();
+        let retval = eval.eval(script, &env).unwrap().unwrap();
 
-        assert_eq!(retval, Some(Value::Integer(15)));
+        assert_eq!(retval, Value::Integer(15));
     }
 
     #[test]
@@ -558,11 +548,11 @@ mod tests {
             sum += fib(i);
         }
         
-        println(sum);
+        println("-->", sum);
         "#;
 
         let retval = eval.eval(script, &env).unwrap();
 
-        println!("{:?}", retval);
+        println!("ret: {:?}", retval);
     }
 }
