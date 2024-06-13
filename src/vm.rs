@@ -4,7 +4,7 @@ use log::debug;
 
 use crate::{
     compiler::Compiler,
-    instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueRef},
+    instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueId},
     value::{Range, Value},
 };
 
@@ -93,19 +93,19 @@ impl Stack {
         self.frames.last_mut()
     }
 
-    fn get_value(&self, index: ValueRef) -> &Value {
+    fn get_value(&self, index: ValueId) -> &Value {
         self.top().unwrap().variables.get_value(index)
     }
 
-    fn get_value_mut(&mut self, index: ValueRef) -> &mut Value {
+    fn get_value_mut(&mut self, index: ValueId) -> &mut Value {
         self.top_mut().unwrap().variables.get_value_mut(index)
     }
 
-    fn take_value(&mut self, index: ValueRef) -> Value {
+    fn take_value(&mut self, index: ValueId) -> Value {
         self.top_mut().unwrap().variables.take_value(index)
     }
 
-    fn set_value(&mut self, index: ValueRef, value: Value) {
+    fn set_value(&mut self, index: ValueId, value: Value) {
         self.top_mut().unwrap().variables.set_value(index, value);
     }
 
@@ -210,7 +210,7 @@ impl Evaluator {
                         self.stack.set_value(*result, ret?);
                     }
                     Instruction::Call { func, args, result } => match func {
-                        ValueRef::Function(id) => {
+                        ValueId::Function(id) => {
                             let func = module.get_function(*id);
 
                             let args: Vec<Value> = args
@@ -234,7 +234,7 @@ impl Evaluator {
 
                             self.stack.set_value(*result, ret.unwrap_or_default());
                         }
-                        ValueRef::Inst(_) => {
+                        ValueId::Inst(_) => {
                             let args: Vec<Value> = args
                                 .iter()
                                 .map(|arg| self.stack.get_value(*arg))
@@ -371,36 +371,36 @@ impl Variables {
         Variables::new(dfg.constants.clone(), values, Vec::new())
     }
 
-    fn get_value(&self, index: ValueRef) -> &Value {
+    fn get_value(&self, index: ValueId) -> &Value {
         match index {
-            ValueRef::Constant(i) => &self.constants[i],
-            ValueRef::Inst(i) => &self.inst_value[i],
+            ValueId::Constant(i) => &self.constants[i],
+            ValueId::Inst(i) => &self.inst_value[i],
             _ => unimplemented!(),
         }
     }
 
-    fn set_value(&mut self, index: ValueRef, value: Value) {
+    fn set_value(&mut self, index: ValueId, value: Value) {
         match index {
-            ValueRef::Constant(i) => self.constants[i] = value,
-            ValueRef::Inst(i) => self.inst_value[i] = value,
+            ValueId::Constant(i) => self.constants[i] = value,
+            ValueId::Inst(i) => self.inst_value[i] = value,
             _ => unimplemented!(),
         }
     }
 
-    fn get_value_mut(&mut self, index: ValueRef) -> &mut Value {
+    fn get_value_mut(&mut self, index: ValueId) -> &mut Value {
         match index {
-            ValueRef::Constant(i) => &mut self.constants[i],
-            ValueRef::Inst(i) => &mut self.inst_value[i],
+            ValueId::Constant(i) => &mut self.constants[i],
+            ValueId::Inst(i) => &mut self.inst_value[i],
             _ => unimplemented!(),
         }
     }
 
-    fn take_value(&mut self, index: ValueRef) -> Value {
+    fn take_value(&mut self, index: ValueId) -> Value {
         match index {
-            ValueRef::Inst(i) => {
+            ValueId::Inst(i) => {
                 std::mem::replace(self.inst_value.get_mut(i).unwrap(), Value::Undefined)
             }
-            ValueRef::Constant(i) => self.constants[i].clone(),
+            ValueId::Constant(i) => self.constants[i].clone(),
             _ => unimplemented!(),
         }
     }

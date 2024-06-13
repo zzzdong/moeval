@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy)]
-pub enum ValueRef {
+pub enum ValueId {
     /// Constants value, immediate value
     Constant(usize),
     /// Variable reference
@@ -36,47 +36,47 @@ pub enum Opcode {
 pub enum Instruction {
     BinaryOp {
         op: Opcode,
-        result: ValueRef,
-        lhs: ValueRef,
-        rhs: ValueRef,
+        result: ValueId,
+        lhs: ValueId,
+        rhs: ValueId,
     },
     LoadArg {
         index: usize,
-        result: ValueRef,
+        result: ValueId,
     },
     Call {
-        func: ValueRef,
-        args: Vec<ValueRef>,
-        result: ValueRef,
+        func: ValueId,
+        args: Vec<ValueId>,
+        result: ValueId,
     },
     LoadEnv {
-        result: ValueRef,
+        result: ValueId,
         name: String,
     },
     PropertyGet {
-        result: ValueRef,
-        object: ValueRef,
+        result: ValueId,
+        object: ValueId,
         property: String,
     },
     PropertySet {
-        object: ValueRef,
+        object: ValueId,
         property: String,
-        value: ValueRef,
+        value: ValueId,
     },
     PropertyCall {
-        object: ValueRef,
+        object: ValueId,
         property: String,
-        args: Vec<ValueRef>,
+        args: Vec<ValueId>,
     },
     Store {
-        object: ValueRef,
-        value: ValueRef,
+        object: ValueId,
+        value: ValueId,
     },
     Return {
-        value: Option<ValueRef>,
+        value: Option<ValueId>,
     },
     BrIf {
-        condition: ValueRef,
+        condition: ValueId,
         then_blk: BlockId,
         else_blk: BlockId,
     },
@@ -84,26 +84,26 @@ pub enum Instruction {
         target: BlockId,
     },
     MakeIterator {
-        iter: ValueRef,
-        result: ValueRef,
+        iter: ValueId,
+        result: ValueId,
     },
     IterateNext {
-        iter: ValueRef,
-        next: ValueRef,
+        iter: ValueId,
+        next: ValueId,
         after_blk: BlockId,
     },
     Range {
-        begin: ValueRef,
-        end: ValueRef,
-        result: ValueRef,
+        begin: ValueId,
+        end: ValueId,
+        result: ValueId,
     },
     NewArray {
-        array: ValueRef,
+        array: ValueId,
         size: Option<usize>,
     },
     ArrayPush {
-        array: ValueRef,
-        value: ValueRef,
+        array: ValueId,
+        value: ValueId,
     },
 }
 
@@ -205,7 +205,7 @@ impl Block {
 #[derive(Debug)]
 pub struct ControlFlowGraph {
     pub constants: Vec<crate::value::Value>,
-    pub inst_values: Vec<ValueRef>,
+    pub inst_values: Vec<ValueId>,
     pub blocks: Vec<Block>,
     pub entry: Option<BlockId>,
     current_block: Option<BlockId>,
@@ -245,16 +245,16 @@ impl ControlFlowGraph {
         self.blocks[block.0].emit(instruction);
     }
 
-    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueRef {
+    pub fn make_constant(&mut self, value: crate::value::Value) -> ValueId {
         let idx = self.constants.len();
         self.constants.push(value);
-        ValueRef::Constant(idx)
+        ValueId::Constant(idx)
     }
 
-    pub fn make_inst_value(&mut self) -> ValueRef {
+    pub fn make_inst_value(&mut self) -> ValueId {
         let idx = self.inst_values.len();
-        self.inst_values.push(ValueRef::Inst(idx));
-        ValueRef::Inst(idx)
+        self.inst_values.push(ValueId::Inst(idx));
+        ValueId::Inst(idx)
     }
 
     pub fn instructions(&self, block: BlockId) -> &[Instruction] {

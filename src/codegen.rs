@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::instruction::{Function, FunctionId, Module, Opcode, ValueRef};
+use crate::instruction::{Function, FunctionId, Module, Opcode, ValueId};
 use crate::irbuilder::{FunctionBuilder, InstBuilder};
 use crate::value::Value;
 
@@ -192,7 +192,7 @@ impl<'a> FunctionCompiler<'a> {
         self.symbols = old_symbols;
     }
 
-    fn compile_function_item(&mut self, fn_item: FunctionItem) -> ValueRef {
+    fn compile_function_item(&mut self, fn_item: FunctionItem) -> ValueId {
         let FunctionItem {
             name,
             params,
@@ -208,9 +208,9 @@ impl<'a> FunctionCompiler<'a> {
         name: Option<String>,
         params: Vec<FunctionParam>,
         body: Vec<Statement>,
-    ) -> ValueRef {
+    ) -> ValueId {
         let id = self.compile_function_id(name, params, body);
-        ValueRef::Function(id)
+        ValueId::Function(id)
     }
 
     fn compile_function_id(
@@ -221,7 +221,7 @@ impl<'a> FunctionCompiler<'a> {
     ) -> FunctionId {
         let func_id = self.module.declare_function(name.clone());
         if let Some(name) = &name {
-            self.symbols.declare(name, ValueRef::Function(func_id));
+            self.symbols.declare(name, ValueId::Function(func_id));
         }
 
         let symbols = self.symbols.new_scope();
@@ -250,7 +250,7 @@ impl<'a> FunctionCompiler<'a> {
         func_id
     }
 
-    fn compile_expression(&mut self, expr: Expression) -> ValueRef {
+    fn compile_expression(&mut self, expr: Expression) -> ValueId {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
@@ -265,7 +265,7 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
-    fn compile_get_property(&mut self, expr: MemberExpression) -> ValueRef {
+    fn compile_get_property(&mut self, expr: MemberExpression) -> ValueId {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -273,7 +273,7 @@ impl<'a> FunctionCompiler<'a> {
         self.builder.get_property(object, &property)
     }
 
-    fn compile_set_property(&mut self, expr: MemberExpression, value: ValueRef) {
+    fn compile_set_property(&mut self, expr: MemberExpression, value: ValueId) {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -281,10 +281,10 @@ impl<'a> FunctionCompiler<'a> {
         self.builder.set_property(object, &property, value)
     }
 
-    fn compile_call(&mut self, expr: CallExpression) -> ValueRef {
+    fn compile_call(&mut self, expr: CallExpression) -> ValueId {
         let CallExpression { func, args } = expr;
 
-        let args: Vec<ValueRef> = args
+        let args: Vec<ValueId> = args
             .into_iter()
             .map(|arg| self.compile_expression(arg))
             .collect();
@@ -305,7 +305,7 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
-    fn compile_assign(&mut self, expr: AssignExpression) -> ValueRef {
+    fn compile_assign(&mut self, expr: AssignExpression) -> ValueId {
         let AssignExpression { object, value, op } = expr;
 
         let value = self.compile_expression(*value);
@@ -344,13 +344,13 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
-    fn compile_closure(&mut self, expr: ClosureExpression) -> ValueRef {
+    fn compile_closure(&mut self, expr: ClosureExpression) -> ValueId {
         let ClosureExpression { params, body } = expr;
 
         self.compile_function(None, params, body)
     }
 
-    fn compile_array(&mut self, expr: ArrayExpression) -> ValueRef {
+    fn compile_array(&mut self, expr: ArrayExpression) -> ValueId {
         let ArrayExpression(elements) = expr;
         let array = self.builder.new_array(Some(elements.len()));
 
@@ -362,7 +362,7 @@ impl<'a> FunctionCompiler<'a> {
         array
     }
 
-    fn compile_literal(&mut self, literal: LiteralExpression) -> ValueRef {
+    fn compile_literal(&mut self, literal: LiteralExpression) -> ValueId {
         let value = match literal {
             LiteralExpression::Boolean(b) => Value::Boolean(b),
             LiteralExpression::Integer(i) => Value::Integer(i),
@@ -374,7 +374,7 @@ impl<'a> FunctionCompiler<'a> {
         self.builder.make_constant(value)
     }
 
-    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> ValueRef {
+    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> ValueId {
         match self.symbols.get(&identifier.0) {
             Some(value) => value,
             None => {
@@ -385,7 +385,7 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
-    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> ValueRef {
+    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> ValueId {
         let lhs = self.compile_expression(lhs);
         let rhs = self.compile_expression(rhs);
 
@@ -410,7 +410,7 @@ impl<'a> FunctionCompiler<'a> {
         }
     }
 
-    fn compile_range(&mut self, lhs: Expression, rhs: Expression) -> ValueRef {
+    fn compile_range(&mut self, lhs: Expression, rhs: Expression) -> ValueId {
         let begin = self.compile_expression(lhs);
         let end = self.compile_expression(rhs);
         self.builder.range(begin, end)
@@ -460,7 +460,7 @@ impl<'a> FunctionCompiler<'a> {
 #[derive(Debug, Clone)]
 pub struct SymbolNode {
     parent: Option<SymbolTable>,
-    symbols: BTreeMap<String, ValueRef>,
+    symbols: BTreeMap<String, ValueId>,
 }
 
 #[derive(Debug, Clone)]
@@ -474,7 +474,7 @@ impl SymbolTable {
         })))
     }
 
-    fn get(&self, name: &str) -> Option<ValueRef> {
+    fn get(&self, name: &str) -> Option<ValueId> {
         if let Some(value) = self.0.borrow().symbols.get(name) {
             return Some(*value);
         }
@@ -484,7 +484,7 @@ impl SymbolTable {
         None
     }
 
-    fn declare(&mut self, name: impl Into<String>, value: ValueRef) {
+    fn declare(&mut self, name: impl Into<String>, value: ValueId) {
         self.0.borrow_mut().symbols.insert(name.into(), value);
     }
 
