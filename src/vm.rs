@@ -1,9 +1,10 @@
+use core::fmt;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
 use log::debug;
 
-use crate::value::{Range, ValueRef};
+use crate::value::{Callable, Range, ValueRef};
 use crate::{
     compiler::Compiler,
     instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueId},
@@ -11,9 +12,34 @@ use crate::{
 };
 
 #[derive(Debug)]
+pub struct TypeError {
+    message: String,
+    cause: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
+}
+
+impl<E> From<E> for TypeError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    fn from(value: E) -> Self {
+        TypeError {
+            message: String::new(),
+            cause: Some(Box::new(value)),
+        }
+    }
+}
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(format!("{}: {:?}", self.message, self.cause).as_str())
+    }
+}
+
+#[derive(Debug)]
 pub enum RuntimeError {
     InvalidOperation(String),
     SymbolNotFound(String),
+    TypeError(TypeError),
 }
 
 impl RuntimeError {
@@ -24,6 +50,25 @@ impl RuntimeError {
     pub fn invalid_operation(msg: impl Into<String>) -> Self {
         RuntimeError::InvalidOperation(msg.into())
     }
+
+    pub fn type_error(msg: impl Into<String>) -> Self {
+        RuntimeError::TypeError(TypeError {
+            message: msg.into(),
+            cause: None,
+        })
+    }
+
+    pub fn invalid_value_type(expected: impl Into<String>, actual: impl fmt::Debug) -> Self {
+        Self::type_error(format!(
+            "expected type `{}`, got {:?}",
+            expected.into(),
+            actual
+        ))
+    }
+
+    pub fn type_error_with(err: impl Into<TypeError>) -> Self {
+        RuntimeError::TypeError(err.into())
+    }
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -31,6 +76,7 @@ impl std::fmt::Display for RuntimeError {
         match self {
             RuntimeError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
             RuntimeError::SymbolNotFound(name) => write!(f, "Symbol not found: {}", name),
+            RuntimeError::TypeError(err) => write!(f, "type error: {}", err),
         }
     }
 }
@@ -52,11 +98,12 @@ impl Environment {
         self.symbols.insert(name.to_string(), ValueRef::new(value));
     }
 
-    pub fn define_function<F>(&mut self, name: impl ToString, func: F)
-    where
-        F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
-    {
-        self.define(name, Value::Function(Box::new(func)));
+    pub fn define_function<Args: 'static>(
+        &mut self,
+        name: impl ToString,
+        callable: impl Callable<Args>,
+    ) {
+        self.define(name, Value::Function(Box::new(callable.into_function())));
     }
 
     pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
@@ -125,8 +172,6 @@ impl Evaluator {
 
     pub fn eval(&mut self, script: &str, env: &Environment) -> Result<Option<Value>, RuntimeError> {
         let module = Compiler::compile(script).unwrap();
-
-        // module.debug();
 
         let dfg = module.control_flow_graph();
 
@@ -436,26 +481,20 @@ pub trait Operate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::value::FromValue;
 
-    fn fib(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
-        let n = args[0].borrow();
-
-        let n: i64 = n.deref().try_into()?;
-
+    fn fib(n: i64) -> i64 {
         if n < 1 {
-            return Ok(Some(0.into()));
+            return 0;
         }
         if n <= 2 {
-            return Ok(Some(1.into()));
+            return 1;
         }
 
-        let a = fib(&[ValueRef::new((n - 1).into())])?.unwrap();
-        let b = fib(&[ValueRef::new((n - 2).into())])?.unwrap();
-
-        Ok(Some(a + b))
+        fib(n - 1) + fib(n - 2)
     }
 
-    fn println(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+    fn println(args: &[ValueRef]) {
         let s = args
             .iter()
             .map(|v| format!("{v}"))
@@ -463,8 +502,12 @@ mod tests {
             .join(" ");
 
         println!("{}", s);
+    }
 
-        Ok(None)
+    fn plus(num: ValueRef, other: i64) {
+        let i = i64::from_value(&num).unwrap() + other;
+
+        *num.borrow_mut() = Value::Integer(i);
     }
 
     #[test]
@@ -505,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn test_eval_env() {
+    fn test_eval_func() {
         let mut env = Environment::new();
         let mut eval = Evaluator::new();
 
@@ -522,6 +565,26 @@ mod tests {
         let retval = eval.eval(script, &env).unwrap();
 
         println!("{:?}", retval);
+    }
+
+    #[test]
+    fn test_func_mut() {
+        let mut env = Environment::new();
+        let mut eval = Evaluator::new();
+
+        env.define_function("plus", plus);
+
+        let script = r#"
+        let a = 100;
+
+        plus(a, 10);
+
+        return a;
+        "#;
+
+        let retval = eval.eval(script, &env).unwrap().unwrap();
+
+        assert_eq!(retval, Value::Integer(110));
     }
 
     #[test]

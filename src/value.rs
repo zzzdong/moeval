@@ -1,6 +1,7 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     fmt::{self, Debug},
+    marker::PhantomData,
     ops::{self, Deref},
     rc::Rc,
 };
@@ -31,7 +32,7 @@ pub enum Value {
     Undefined,
     Array(Vec<ValueRef>),
     Object(Box<dyn Object>),
-    Function(Box<dyn Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError>>),
+    Function(Box<dyn Function>),
     Iterator(Box<dyn Iterator<Item = ValueRef>>),
     Range(Range),
 }
@@ -229,32 +230,251 @@ impl ops::Sub<Value> for Value {
     }
 }
 
-impl TryInto<i64> for Value {
-    type Error = RuntimeError;
+/// Function trait for external functions.
+pub trait Function: Send + 'static {
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError>;
+}
 
-    fn try_into(self) -> Result<i64, Self::Error> {
-        match self {
-            Value::Integer(i64) => Ok(i64),
-            _ => Err(RuntimeError::invalid_operation(
-                "can only convert integer to i64",
-            )),
+pub struct IntoFunction<F, Args> {
+    func: F,
+    _marker: PhantomData<fn(Args) -> ()>,
+}
+
+impl<F, Args> Function for IntoFunction<F, Args>
+where
+    F: Callable<Args> + Clone,
+    Args: 'static,
+{
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        self.func.call(args)
+    }
+}
+
+pub trait IntoRet {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError>;
+}
+
+impl<T> IntoRet for T
+where
+    T: Into<Value>,
+{
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        Ok(Some(self.into()))
+    }
+}
+
+impl IntoRet for () {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        Ok(None)
+    }
+}
+
+pub trait FromValue<T = Self>: Sized {
+    fn from_value(value: &ValueRef) -> Result<T, RuntimeError>;
+}
+
+impl FromValue for ValueRef {
+    fn from_value(value: &ValueRef) -> Result<Self, RuntimeError> {
+        Ok(value.clone())
+    }
+}
+
+impl FromValue for bool {
+    fn from_value(value: &ValueRef) -> Result<bool, RuntimeError> {
+        match *value.borrow() {
+            Value::Boolean(b) => Ok(b),
+            ref v => Err(RuntimeError::invalid_value_type("bool", v)),
         }
     }
 }
 
-impl TryInto<i64> for &Value {
-    type Error = RuntimeError;
-
-    fn try_into(self) -> Result<i64, Self::Error> {
-        match self {
-            Value::Integer(i) => Ok(*i),
-            _ => Err(RuntimeError::invalid_operation(
-                "can only convert integer to i64",
-            )),
+impl FromValue for u8 {
+    fn from_value(value: &ValueRef) -> Result<u8, RuntimeError> {
+        match *value.borrow() {
+            Value::Byte(b) => Ok(b),
+            ref v => Err(RuntimeError::invalid_value_type("byte", v)),
         }
     }
 }
 
+impl FromValue for i64 {
+    fn from_value(value: &ValueRef) -> Result<i64, RuntimeError> {
+        match *value.borrow() {
+            Value::Integer(i) => Ok(i),
+            ref v => Err(RuntimeError::invalid_value_type("integer", v)),
+        }
+    }
+}
+
+impl FromValue for f64 {
+    fn from_value(value: &ValueRef) -> Result<f64, RuntimeError> {
+        match *value.borrow() {
+            Value::Float(f) => Ok(f),
+            ref v => Err(RuntimeError::invalid_value_type("float", v)),
+        }
+    }
+}
+
+impl FromValue for char {
+    fn from_value(value: &ValueRef) -> Result<char, RuntimeError> {
+        match *value.borrow() {
+            Value::Char(c) => Ok(c),
+            ref v => Err(RuntimeError::invalid_value_type("char", v)),
+        }
+    }
+}
+
+pub trait Callable<Args>: Clone + Send + Sized + 'static {
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError>;
+
+    fn into_function(self) -> IntoFunction<Self, Args> {
+        IntoFunction {
+            func: self,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, Ret> Callable<&[ValueRef]> for F
+where
+    F: Fn(&[ValueRef]) -> Ret + Clone + Send + 'static,
+    Ret: IntoRet,
+{
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        (self)(args).into_ret()
+    }
+}
+
+impl<F, Ret> Callable<()> for F
+where
+    F: Fn() -> Ret + Clone + Send + 'static,
+    Ret: IntoRet,
+{
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        self().into_ret()
+    }
+}
+
+// impl<F, T0, Ret> Callable<T0> for F
+// where
+//     F: Fn(T0) -> Ret + Clone + Send + 'static,
+//     T0: FromValue,
+//     Ret: IntoRet,
+// {
+//     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+//         let arg0 = T0::from_value(&args[0])?;
+//         (self)(arg0).into_ret()
+//     }
+// }
+
+// impl<F, T0, T1, Ret> Callable<(T0, T1)> for F
+// where
+//     F: Fn(T0, T1) -> Ret + Clone + Send + 'static,
+//     T0: FromValue,
+//     T1: FromValue,
+//     Ret: IntoRet,
+// {
+//     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+//         let arg0 = T0::from_value(&args[0])?;
+//         let arg1 = T1::from_value(&args[1])?;
+//         (self)(arg0, arg1).into_ret()
+//     }
+// }
+
+// macro_rules! impl_callable_tuple {
+//     ($($arg: ident),+) => {
+//         impl<F, Ret, $($arg,)*> Callable<($($arg,)*)> for F
+//         where
+//             F: Fn($($arg,)*) -> Ret + Clone + Send + 'static,
+//             Ret: IntoRet,
+//             $( $arg: FromValue, )*
+//         {
+//             fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+//                 $(
+//                     let $arg = <$arg>::from_value(&args[${index()}])?;
+//                 )*
+//                 (self)($($arg,)*).into_ret()
+//             }
+//         }
+//     }
+// }
+
+macro_rules! impl_callable {
+    ($($idx: expr => $arg: ident),+) => {
+        #[allow(non_snake_case)]
+        impl<F, Ret, $($arg,)*> Callable<($($arg,)*)> for F
+        where
+            F: Fn($($arg,)*) -> Ret + Clone + Send + 'static,
+            Ret: IntoRet,
+            $( $arg: FromValue, )*
+        {
+            fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+                $(
+                    let $arg = <$arg>::from_value(&args[$idx])?;
+                )*
+                (self)($($arg,)*).into_ret()
+            }
+        }
+    }
+}
+
+impl_callable!(0=>T0);
+impl_callable!(0=>T0, 1=>T1);
+impl_callable!(0=>T0, 1=>T1, 2=>T2);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11, 12=>T12);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11, 12=>T12, 13=>T13);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11, 12=>T12, 13=>T13, 14=>T14);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11, 12=>T12, 13=>T13, 14=>T14, 15=>T15);
+impl_callable!(0=>T0, 1=>T1, 2=>T2, 3=>T3, 4=>T4, 5=>T5, 6=>T6, 7=>T7, 8=>T8, 9=>T9, 10=>T10, 11=>T11, 12=>T12, 13=>T13, 14=>T14, 15=>T15, 16=>T16);
+
+/* use this when [feature(macro_metavar_expr)](https://github.com/rust-lang/rust/pull/122808) is available
+macro_rules! impl_callable_tuple {
+    ($($arg: ident),+) => {
+        #[allow(non_snake_case)]
+        impl<F, Ret, $($arg,)*> Callable<($($arg,)*)> for F
+        where
+            F: Fn($($arg,)*) -> Ret + Clone + Send + 'static,
+            Ret: IntoRet,
+            $( $arg: FromValue, )*
+        {
+            fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+                $(
+                    let $arg = <$arg>::from_value(&args[${index()}])?;
+                )*
+                (self)($($arg,)*).into_ret()
+            }
+        }
+    }
+}
+impl_callable_tuple!(T0);
+impl_callable_tuple!(T0, T1);
+impl_callable_tuple!(T0, T1, T2);
+impl_callable_tuple!(T0, T1, T2, T3);
+impl_callable_tuple!(T0, T1, T2, T3, T4);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
+ */
+
+/// Dynamic Object trait for external objects.
 pub trait Object: Debug {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation("Object is not callable"))
@@ -434,7 +654,7 @@ impl Operate for Value {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, crate::vm::RuntimeError> {
         match self {
             Value::Object(ref mut o) => o.call(args),
-            Value::Function(ref mut f) => f(args),
+            Value::Function(ref mut f) => f.call(args),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for function call",
             )),
@@ -469,6 +689,7 @@ impl Operate for Value {
     }
 }
 
+/// ValueRef is a reference to a value.
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct ValueRef(Rc<RefCell<Value>>);
 
@@ -481,8 +702,8 @@ impl ValueRef {
         self.0.as_ref().borrow()
     }
 
-    pub fn borrow_mut(&self) -> RefMut<Value> {
-        self.0.borrow_mut()
+    pub fn borrow_mut(&self) -> RefMut<'_, Value> {
+        self.0.as_ref().borrow_mut()
     }
 
     pub fn as_ptr(&self) -> *mut Value {
@@ -519,7 +740,7 @@ impl From<Value> for ValueRef {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Range {
+pub struct Range {
     begin: i64,
     end: i64,
 }
