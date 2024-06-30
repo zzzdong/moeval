@@ -6,7 +6,7 @@ use log::debug;
 use crate::value::{Range, ValueRef};
 use crate::{
     compiler::Compiler,
-    instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueId},
+    ir::instruction::{ControlFlowGraph, Instruction, Module, Opcode, ValueId},
     value::Value,
 };
 

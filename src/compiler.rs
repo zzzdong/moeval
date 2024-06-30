@@ -1,4 +1,4 @@
-use crate::{codegen::Codegen, instruction::Module, parser::ParseError};
+use crate::{codegen::Codegen, ir::instruction::Module, parser::ParseError};
 
 #[derive(Debug)]
 pub enum CompileError {

@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::instruction::{Function, FunctionId, Module, Opcode, ValueId};
-use crate::irbuilder::{FunctionBuilder, InstBuilder};
+use crate::ir::types::*;
+use crate::ir::instruction::{Opcode, ValueId};
+use crate::ir::builder::{FunctionBuilder, Builder, Module};
 use crate::value::Primitive;
 
 pub struct Codegen {
@@ -21,7 +22,7 @@ impl Codegen {
     }
 
     pub fn compile(mut self, ast: Program) -> Module {
-        let mut func = Function::new(None);
+        let mut func = Function::new(None, vec![]);
         let func_builder = FunctionBuilder::new(&mut func);
         let mut func_compiler = FunctionCompiler::new(
             func_builder,
@@ -38,17 +39,15 @@ impl Codegen {
 }
 
 pub struct FunctionCompiler<'a> {
-    builder: FunctionBuilder<'a>,
+    builder: &'a mut Builder<'a>,
     symbols: SymbolTable,
-    module: &'a mut Module,
 }
 
 impl<'a> FunctionCompiler<'a> {
-    pub fn new(builder: FunctionBuilder<'a>, symbols: SymbolTable, module: &'a mut Module) -> Self {
+    pub fn new(builder: &'a mut Builder<'a>, symbols: SymbolTable) -> Self {
         Self {
             builder,
             symbols,
-            module,
         }
     }
 
