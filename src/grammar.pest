@@ -130,6 +130,7 @@ atom = {
   | literal
   | tuple
   | array
+  | map
   | closure
   | env
 }
@@ -138,7 +139,13 @@ atom = {
 tuple = { "(" ~ (((expression ~ ",")+ ~ expression) | (expression ~ ",")) ~ ")" }
 
 /// Array
-array = { "[" ~ expression ~ ("," ~ expression)* ~ "]" }
+array = { "[" ~ (expression ~ ("," ~ expression)*)? ~ "]" }
+
+/// map item
+map_item = { expression ~ ":" ~ expression }
+
+/// map
+map = { "{" ~ (map_item ~ ("," ~ map_item)*)? ~ "}" }
 
 /// Literal
 literal = { boolean | float | integer | string | character }
@@ -324,7 +331,7 @@ mod_assign_operator = { "%=" }
 comma = { "," }
 
 /// An identifier.
-identifier = { !keywords ~ name }
+identifier = { name }
 
 ///
 name = @{ !"PUSH" ~ ("_" | alpha) ~ ("_" | alpha_num)* }

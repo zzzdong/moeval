@@ -1,4 +1,4 @@
-use crate::{codegen::Codegen, ir::instruction::Module, parser::ParseError};
+use crate::{codegen::Codegen, ir::builder::Module, parser::ParseError};
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -34,10 +34,7 @@ impl Compiler {
         // let ast = crate::semantics::analyze(ast)?;
 
         // 生成代码
-        let module = Codegen::new().compile(ast);
-
-        // 输出代码
-        // module.debug();
+        let module = Codegen::compile(ast);
 
         Ok(module)
     }
@@ -49,15 +46,12 @@ mod test {
 
     #[test]
     fn test_compiler() {
-        Compiler::compile("1 + 2 * 3 - 4 - a * b / c == 0;").unwrap();
-
-        Compiler::compile("a.b.c.d(1, 1) + b(c, d);").unwrap();
-
-        Compiler::compile("a.c = b.c(1,1);").unwrap();
-
-        Compiler::compile("all(Tweets, |x|{return x.Len <= 240;});").unwrap();
-
-        let input = r#"
+        let inputs = vec![
+            "1 + 2 * 3 - 4 - a * b / c == 0;",
+            "a.b.c.d(1, 1) + b(c, d);",
+            "a.c = b.c(1,1);",
+            "all(Tweets, |x|{return x.Len <= 240;});",
+            r#"
 let cc = 100;
 fn fib(n: int) -> int {
     if n <= 1 {
@@ -79,7 +73,14 @@ let c = b + a;
 c += cc;
 
 k + cc;
-"#;
-        Compiler::compile(input).unwrap();
+"#,
+        ];
+
+        for input in inputs.iter() {
+            // println!("{}", input);
+            let module = Compiler::compile(input).unwrap();
+            println!("============");
+            println!("{module}")
+        }
     }
 }

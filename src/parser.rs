@@ -551,6 +551,7 @@ fn parse_atom(pair: Pair<Rule>) -> Result<Expression> {
         Rule::literal => parse_literal(atom).map(Expression::Literal),
         Rule::tuple => parse_tuple(atom).map(Expression::Tuple),
         Rule::array => parse_array(atom).map(Expression::Array),
+        Rule::map => parse_map(atom).map(Expression::Map),
         Rule::closure => parse_closure(atom).map(Expression::Closure),
         Rule::env => parse_env(atom).map(Expression::Environment),
         _ => unreachable!("unknown atom: {:?}", atom),
@@ -587,9 +588,7 @@ fn parse_literal(pair: Pair<Rule>) -> Result<LiteralExpression> {
     let value = pairs.next().unwrap();
 
     match value.as_rule() {
-        Rule::boolean => Ok(LiteralExpression::Boolean(
-            pairs.next().unwrap().as_str() == "true",
-        )),
+        Rule::boolean => Ok(LiteralExpression::Boolean(pairs.as_str() == "true")),
         Rule::integer => Ok(LiteralExpression::Integer(value.as_str().parse().map_err(
             |err| ParseError::with_message(value.as_span(), format!("parse integer failed, {err}")),
         )?)),
@@ -622,6 +621,32 @@ fn parse_array(pair: Pair<Rule>) -> Result<ArrayExpression> {
     Ok(ArrayExpression(elements?))
 }
 
+fn parse_map_item(pair: Pair<Rule>) -> Result<(Expression, Expression)> {
+    let mut pairs = pair.into_inner();
+
+    let key_pair = pairs.next().unwrap();
+    let key = parse_expression(key_pair.clone())?;
+    if !key.is_literal() {
+        return Err(ParseError::with_message(
+            key_pair.as_span(),
+            "map key must be literal".to_string(),
+        ));
+    }
+
+    let value = parse_expression(pairs.next().unwrap())?;
+
+    Ok((key, value))
+}
+
+fn parse_map(pair: Pair<Rule>) -> Result<MapExpression> {
+    let pairs = pair.into_inner();
+
+    let elements: Result<Vec<(Expression, Expression)>> =
+        pairs.map(parse_map_item).collect();
+
+    Ok(MapExpression(elements?))
+}
+
 fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
     let mut pairs = pair.into_inner();
 
@@ -633,6 +658,34 @@ fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn parse_types() {
+        let input = r#"
+let i = 1; // int
+let f = 1.0; // float
+let b = true; // bool
+let c = 'c'; // char
+let s = "hello"; // string
+let arr = [1]; // array
+let map = {"a": 1}; // map
+
+for (i, ele) in arr.enumerate() {
+    println("->", i);
+}
+"#;
+
+        let mut pairs = PestParser::parse(Rule::program, input);
+        println!("ret: {pairs:?}");
+
+        let mut pairs = pairs.unwrap();
+
+        let pair = pairs.next().unwrap();
+
+        let program = parse_program(pair).unwrap();
+
+        println!("{program:?}");
+    }
 
     #[test]
     fn test_parser() {

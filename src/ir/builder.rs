@@ -1,62 +1,124 @@
-use std::collections::HashMap;
+use core::fmt;
+use std::ops::Add;
+use indexmap::IndexSet;
 
 use super::instruction::*;
 use super::types::*;
 
-pub struct Context {
-    /// The function we're compiling.
-    pub func: Function,
+#[derive(Debug, Clone)]
+pub struct FuncParam {
+    pub name: Name,
+}
 
-    /// The control flow graph of `func`.
-    pub cfg: ControlFlowGraph,
+impl FuncParam {
+    pub fn new(name: impl Into<Name>) -> Self {
+        Self { name: name.into() }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FuncSignature {
+    pub name: Name,
+    pub params: Vec<FuncParam>,
+}
+
+impl FuncSignature {
+    pub fn new(name: impl Into<Name>, params: Vec<FuncParam>) -> Self {
+        Self {
+            name: name.into(),
+            params,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub id: FunctionId,
+    pub signature: FuncSignature,
+    pub flow_graph: FlowGraph,
+}
+
+impl Function {
+    pub fn new(id: FunctionId, signature: FuncSignature) -> Self {
+        Self {
+            id,
+            signature,
+            flow_graph: FlowGraph::default(),
+        }
+    }
+
+    pub fn get_block(&self, id: BlockId) -> Option<&Block> {
+        self.flow_graph.get_block(id)
+    }
+
+    pub fn get_entry_block(&self) -> Option<&Block> {
+        match self.flow_graph.entry {
+            Some(id) => self.flow_graph.get_block(id),
+            None => None,
+        }
+    }
+}
+
+pub struct Context {
+    /// The flow graph we are building.
+    pub flow_graph: FlowGraph,
+}
+
+impl Context {
+    pub fn new() -> Self {
+        Self {
+            flow_graph: FlowGraph::new(),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Module {
-    pub constants: Vec<crate::value::Primitive>,
-    functions: Vec<Function>,
-    func_map: HashMap<Name, FunctionId>,
-    entry: Option<FunctionId>,
+    pub constants: IndexSet<Primitive>,
+    pub functions: Vec<Function>,
+    pub entry: Option<FunctionId>,
 }
 
 impl Module {
     pub fn new() -> Self {
         Self {
-            constants: Vec::new(),
+            constants: IndexSet::new(),
             functions: Vec::new(),
-            func_map: HashMap::new(),
             entry: None,
         }
     }
 
-    pub fn make_context(func: Function) -> Context {
-        Context { func, cfg: ControlFlowGraph::new() }
+    pub fn get_function(&self, id: FunctionId) -> Option<&Function> {
+        self.functions.get(id.as_usize())
     }
 
-    pub fn make_constant(&mut self, value: crate::value::Primitive) -> ValueId {
-        let id = ValueId::Constant(self.constants.len());
-        self.constants.push(value);
-        id
+    pub fn make_context(&self) -> Context {
+        Context::new()
     }
 
-    pub fn declare_function(
-        &mut self,
-        name: impl Into<Name>,
-        params: Vec<FunctionParam>,
-    ) -> FunctionId {
-        let id = FunctionId::new(self.functions.len());
-        self.functions.push(Function::new(name, params));
-        id
-    }
-
-    pub fn define_function(&mut self, id: FunctionId, func: Function) {
-        if !func.name.is_anonymous() {
-            self.func_map.insert(func.name.clone(), id);
+    pub fn make_constant(&mut self, value: Primitive) -> ConstantId {
+        match self.constants.get_index_of(&value) {
+            Some(index) => ConstantId::new(index),
+            None => {
+                let id = ConstantId::new(self.constants.len());
+                self.constants.insert(value);
+                id
+            }
         }
+    }
 
-        self.functions[id.as_usize()] = func;
+    pub fn declare_function(&mut self, signature: FuncSignature) -> FunctionId {
+        let id = FunctionId::new(self.functions.len());
+        self.functions.push(Function::new(id, signature));
+        id
+    }
 
-        // compile function into IR
+    pub fn define_function(&mut self, id: FunctionId, context: Context) {
+        let Context { flow_graph, .. } = context;
+
+        let func = &mut self.functions[id.as_usize()];
+
+        let _ = std::mem::replace(&mut func.flow_graph, flow_graph);
     }
 
     pub fn set_entry(&mut self, id: FunctionId) {
@@ -64,42 +126,79 @@ impl Module {
     }
 }
 
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, constant) in self.constants.iter().enumerate() {
+            writeln!(f, "#{i}:\t {constant:?}")?;
+        }
+
+        for func in self.functions.iter() {
+            writeln!(
+                f,
+                "function[{}]@{}()",
+                func.id.as_usize(),
+                func.signature.name
+            )?;
+            for block in func.flow_graph.blocks.iter() {
+                writeln!(f, "block#{}:", block.id.as_usize())?;
+                for instruction in block.instructions.iter() {
+                    writeln!(f, "\t{}", instruction)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 pub struct Builder<'a> {
     context: &'a mut Context,
-    module: &'a mut Module,
+    pub(crate) module: &'a mut Module,
 }
 
 impl<'a> Builder<'a> {
-    pub fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph {
-        &mut self.context.cfg
+    pub fn new(context: &'a mut Context, module: &'a mut Module) -> Self {
+        Self { context, module }
     }
 
-    pub fn make_constant(&mut self, value: crate::value::Primitive) -> ValueId {
-        self.module.make_constant(value)
+    pub fn flow_graph(&mut self) -> &FlowGraph {
+        &self.context.flow_graph
     }
 
-    pub fn make_inst_value(&mut self) -> ValueId {
-        self.control_flow_graph_mut().make_inst_value()
+    pub fn flow_graph_mut(&mut self) -> &mut FlowGraph {
+        &mut self.context.flow_graph
     }
 
-    pub fn create_block(&mut self, label: impl Into<Option<String>>) -> BlockId {
-        self.control_flow_graph_mut().create_block(label)
+    pub fn make_constant(&mut self, value: Primitive) -> Address {
+        let src = self.module.make_constant(value);
+        let dst = self.create_alloc();
+        self.flow_graph_mut()
+            .emit(Instruction::LoadConst { dst, src });
+        dst
+    }
+
+    pub fn create_alloc(&mut self) -> Address {
+        self.flow_graph_mut().create_alloc()
+    }
+
+    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
+        self.flow_graph_mut().create_block(label)
     }
 
     pub fn switch_to_block(&mut self, block: BlockId) {
-        self.control_flow_graph_mut().switch_to_block(block);
+        self.flow_graph_mut().switch_to_block(block);
     }
 
     pub fn set_entry_block(&mut self, block: BlockId) {
-        self.control_flow_graph_mut().set_entry_block(block);
+        self.flow_graph_mut().set_entry_block(block);
     }
 
-    pub fn binop(&mut self, op: Opcode, lhs: ValueId, rhs: ValueId) -> ValueId {
-        let result = self.control_flow_graph_mut().make_inst_value();
+    pub fn binop(&mut self, op: Opcode, lhs: Address, rhs: Address) -> Address {
+        let result = self.flow_graph_mut().create_alloc();
 
-        self.control_flow_graph_mut().emit(Instruction::BinaryOp {
+        self.flow_graph_mut().emit(Instruction::BinaryOp {
             op,
-            result,
+            dst: result,
             lhs,
             rhs,
         });
@@ -107,131 +206,152 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn assign(&mut self, object: ValueId, value: ValueId) {
-        self.control_flow_graph_mut()
-            .emit(Instruction::Store { object, value })
+    pub fn assign(&mut self, dst: Address, src: Address) {
+        self.flow_graph_mut().emit(Instruction::Store {
+            dst,
+            src,
+        })
     }
 
-    pub fn get_property(&mut self, object: ValueId, property: &str) -> ValueId {
-        let result = self.make_inst_value();
+    pub fn get_property(&mut self, object: Address, property: &str) -> Address {
+        let result = self.create_alloc();
 
-        self.control_flow_graph_mut()
-            .emit(Instruction::PropertyGet {
-                result,
-                object,
-                property: property.to_string(),
-            });
+        self.flow_graph_mut().emit(Instruction::PropertyGet {
+            dst: result,
+            object,
+            property: property.to_string(),
+        });
 
         result
     }
 
-    pub fn set_property(&mut self, object: ValueId, property: &str, value: ValueId) {
-        self.control_flow_graph_mut()
-            .emit(Instruction::PropertySet {
-                object,
-                property: property.to_string(),
-                value,
-            });
-    }
-
-    pub fn call_property(&mut self, object: ValueId, property: String, args: Vec<ValueId>) -> ValueId {
-        let result = self.make_inst_value();
-
-        self.control_flow_graph_mut()
-            .emit(Instruction::PropertyCall {
-                object,
-                property,
-                args,
-            });
-
-        result
-    }
-
-    pub fn load_external_variable(&mut self, name: String) -> ValueId {
-        let result = self.make_inst_value();
-
-        self.control_flow_graph_mut()
-            .emit(Instruction::LoadEnv { result, name });
-
-        result
-    }
-
-    pub fn load_argument(&mut self, index: usize) -> ValueId {
-        let result = self.make_inst_value();
-
-        self.control_flow_graph_mut()
-            .emit(Instruction::LoadArg { result, index });
-
-        result
-    }
-
-    pub fn make_call(&mut self, func: ValueId, args: Vec<ValueId>) -> ValueId {
-        let result = self.make_inst_value();
-
-        self.control_flow_graph_mut()
-            .emit(Instruction::Call { result, func, args });
-
-        result
-    }
-
-    pub fn br_if(&mut self, condition: ValueId, then_blk: BlockId, else_blk: BlockId) {
-        self.control_flow_graph_mut().emit(Instruction::BrIf {
-            condition,
-            then_blk,
-            else_blk,
+    pub fn set_property(&mut self, object: Address, property: &str, value: Address) {
+        self.flow_graph_mut().emit(Instruction::PropertySet {
+            object,
+            property: property.to_string(),
+            value,
         });
     }
 
-    pub fn br(&mut self, target: BlockId) {
-        self.control_flow_graph_mut()
-            .emit(Instruction::Br { target });
+    pub fn call_property(
+        &mut self,
+        object: Address,
+        property: String,
+        args: Vec<Address>,
+    ) -> Address {
+        let dst = self.create_alloc();
+
+        self.flow_graph_mut().emit(Instruction::PropertyCall {
+            object,
+            property,
+            args,
+            result: dst,
+        });
+
+        dst
     }
 
-    pub fn return_(&mut self, value: Option<ValueId>) {
-        self.control_flow_graph_mut()
-            .emit(Instruction::Return { value });
+    pub fn load_external_variable(&mut self, name: String) -> Address {
+        let result = self.create_alloc();
+
+        self.flow_graph_mut()
+            .emit(Instruction::LoadEnv { dst: result, name });
+
+        result
     }
 
-    pub fn make_iterator(&mut self, iter: ValueId) -> ValueId {
-        let result = self.make_inst_value();
+    pub fn load_argument(&mut self, index: usize) -> Address {
+        let result = self.create_alloc();
 
-        self.control_flow_graph_mut()
+        self.flow_graph_mut()
+            .emit(Instruction::LoadArg { dst: result, index });
+
+        result
+    }
+
+    pub fn make_call(&mut self, func: Address, args: Vec<Address>) -> Address {
+        let result = self.create_alloc();
+
+        self.flow_graph_mut()
+            .emit(Instruction::Call { func, args, result });
+
+        result
+    }
+
+    pub fn br_if(&mut self, condition: Address, true_blk: BlockId, false_blk: BlockId) {
+        self.flow_graph_mut().emit(Instruction::BrIf {
+            condition,
+            true_blk: true_blk,
+            false_blk: false_blk,
+        });
+    }
+
+    pub fn br(&mut self, dst_blk: BlockId) {
+        self.flow_graph_mut().emit(Instruction::Br { dst: dst_blk });
+    }
+
+    pub fn return_(&mut self, value: Option<Address>) {
+        self.flow_graph_mut().emit(Instruction::Return { value });
+    }
+
+    pub fn make_iterator(&mut self, iter: Address) -> Address {
+        let result = self.create_alloc();
+
+        self.flow_graph_mut()
             .emit(Instruction::MakeIterator { iter, result });
 
         result
     }
 
-    pub fn iterate_next(&mut self, iter: ValueId, next: ValueId, after_blk: BlockId) -> ValueId {
-        let result = self.make_inst_value();
+    pub fn iterate_next(&mut self, iter: Address, next: Address, after_blk: BlockId) -> Address {
+        let result = self.create_alloc();
 
-        self.control_flow_graph_mut()
-            .emit(Instruction::IterateNext {
-                iter,
-                next,
-                after_blk,
-            });
+        self.flow_graph_mut().emit(Instruction::IterateNext {
+            iter,
+            next,
+            after_blk,
+        });
 
         result
     }
 
-    pub fn range(&mut self, begin: ValueId, end: ValueId) -> ValueId {
-        let result = self.make_inst_value();
-        self.control_flow_graph_mut()
+    pub fn range(&mut self, begin: Address, end: Address) -> Address {
+        let result = self.create_alloc();
+        self.flow_graph_mut()
             .emit(Instruction::Range { begin, end, result });
         result
     }
 
-    pub fn new_array(&mut self, size: Option<usize>) -> ValueId {
-        let array = self.make_inst_value();
-        self.control_flow_graph_mut()
-            .emit(Instruction::NewArray { array, size });
+    pub fn new_array(&mut self, size: Option<usize>) -> Address {
+        let array = self.create_alloc();
+        self.flow_graph_mut()
+            .emit(Instruction::NewArray { dst: array, size });
         array
     }
 
-    pub fn array_push(&mut self, array: ValueId, value: ValueId) -> ValueId {
-        self.control_flow_graph_mut()
+    pub fn array_push(&mut self, array: Address, value: Address) -> Address {
+        self.flow_graph_mut()
             .emit(Instruction::ArrayPush { array, value });
         array
+    }
+
+    pub fn new_map(&mut self) -> Address {
+        let map = self.create_alloc();
+        self.flow_graph_mut()
+            .emit(Instruction::NewMap { dst: map });
+        map
+    }
+
+    pub fn index_get(&mut self, object: Address, index: Address) -> Address {
+        let dst = self.create_alloc();
+        self.flow_graph_mut()
+            .emit(Instruction::IndexGet { dst, object, index });
+        dst
+    }
+
+    pub fn index_set(&mut self, object: Address, index: Address, value: Address) {
+        self.flow_graph_mut()
+            .emit(Instruction::IndexSet { object, index, value });
     }
 
     // fn new_object(&mut self) -> ValueRef {
@@ -239,27 +359,19 @@ impl<'a> Builder<'a> {
     // }
 }
 
-pub struct FunctionBuilder<'a> {
-    func: &'a mut Function,
-}
-
-impl<'a> FunctionBuilder<'a> {
-    pub fn new(func: &'a mut Function) -> Self {
-        Self { func }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Block {
-    pub label: Option<String>,
+    pub id: BlockId,
+    pub label: Name,
     pub instructions: Vec<Instruction>,
     // pub terminator: Option<Terminator>,
 }
 
 impl Block {
-    pub fn new(label: Option<String>) -> Self {
+    pub fn new(id: BlockId, label: impl Into<Name>) -> Self {
         Self {
-            label,
+            id,
+            label: label.into(),
             instructions: Vec::new(),
             // terminator: None,
         }
@@ -270,30 +382,32 @@ impl Block {
     }
 }
 
-#[derive(Debug)]
-pub struct ControlFlowGraph {
-    pub inst_values: Vec<ValueId>,
+#[derive(Debug, Clone, Default)]
+pub struct FlowGraph {
+    pub values: Vec<Address>,
     pub entry: Option<BlockId>,
     pub blocks: Vec<Block>,
-    instructions: Instructions,
     current_block: Option<BlockId>,
 }
 
-impl ControlFlowGraph {
+impl FlowGraph {
     pub fn new() -> Self {
         Self {
-            inst_values: Vec::new(),
+            values: Vec::new(),
             blocks: Vec::new(),
-            instructions: Instructions::new(),
             entry: None,
             current_block: None,
         }
     }
 
-    pub fn create_block(&mut self, label: impl Into<Option<String>>) -> BlockId {
-        let id = self.blocks.len();
-        self.blocks.push(Block::new(label.into()));
-        BlockId::new(id)
+    pub fn get_block(&self, id: BlockId) -> Option<&Block> {
+        self.blocks.get(id.as_usize())
+    }
+
+    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
+        let id = BlockId::new(self.blocks.len());
+        self.blocks.push(Block::new(id, label.into()));
+        id
     }
 
     pub fn entry(&self) -> Option<BlockId> {
@@ -313,9 +427,11 @@ impl ControlFlowGraph {
         self.blocks[block.as_usize()].emit(instruction);
     }
 
-    pub fn make_inst_value(&mut self) -> ValueId {
-        let idx = self.inst_values.len();
-        self.inst_values.push(ValueId::Inst(idx));
-        ValueId::Inst(idx)
+    pub fn create_alloc(&mut self) -> Address {
+        let idx = self.values.len();
+        let v = Address::Stack(idx);
+        self.values.push(v);
+        self.emit(Instruction::Alloc { dst: v });
+        v
     }
 }

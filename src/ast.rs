@@ -136,6 +136,7 @@ pub enum Expression {
     Environment(EnvironmentExpression),
     Tuple(TupleExpression),
     Array(ArrayExpression),
+    Map(MapExpression),
     Closure(ClosureExpression),
     Member(MemberExpression),
     Assign(AssignExpression),
@@ -143,6 +144,29 @@ pub enum Expression {
     Index(IndexExpression),
     Slice(SliceExpression),
     Try(Box<Expression>),
+}
+
+impl Expression {
+    pub(crate) fn is_literal(&self) -> bool {
+        match self {
+            Expression::Literal(_) => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn is_identifier(&self) -> bool {
+        match self {
+            Expression::Identifier(_) => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn as_literal(&self) -> Option<LiteralExpression> {
+        match self {
+            Expression::Literal(lit) => Some(lit.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -319,6 +343,9 @@ pub struct TupleExpression(pub Vec<Expression>);
 
 #[derive(Debug, Clone)]
 pub struct ArrayExpression(pub Vec<Expression>);
+
+#[derive(Debug, Clone)]
+pub struct MapExpression(pub Vec<(Expression, Expression)>);
 
 #[derive(Debug, Clone)]
 pub struct EnvironmentExpression(pub String);

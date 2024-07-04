@@ -1,22 +1,62 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
     fmt::{self, Debug},
     ops::{self, Deref},
     rc::Rc,
 };
 
-use crate::vm::{Operate, RuntimeError};
+use indexmap::IndexMap;
 
-#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
-pub enum Primitive {
-    Boolean(bool),
-    Byte(u8),
-    Integer(i64),
-    Float(f64),
-    Char(char),
-    String(String),
-    #[default]
-    Undefined,
+use crate::{
+    ir::{types::Primitive, FunctionId},
+    vm::RuntimeError,
+};
+
+pub trait Operate {
+    fn add(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn sub(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn mul(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn div(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn modulo(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn pow(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn lt(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn gt(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn le(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn ge(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn eq(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn ne(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn and(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn or(&self, other: &Value) -> Result<Value, RuntimeError>;
+    fn not(&self) -> Result<Value, RuntimeError>;
+
+    fn index_get(&self, index: ValueRef) -> Result<ValueRef, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            "indexing is not supported for this type",
+        ))
+    }
+
+    fn index_set(&mut self, index: ValueRef, value: ValueRef) -> Result<(), RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            "indexing is not supported for this type",
+        ))
+    }
+
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        Err(RuntimeError::invalid_operation("unimplement"))
+    }
+
+    fn call_member(
+        &mut self,
+        member: &str,
+        args: &[ValueRef],
+    ) -> Result<Option<Value>, RuntimeError> {
+        Err(RuntimeError::invalid_operation("unimplement"))
+    }
+
+    fn iterator(&mut self) -> Result<Option<Box<dyn Iterator<Item = ValueRef>>>, RuntimeError> {
+        Err(RuntimeError::invalid_operation("unimplement"))
+    }
 }
 
 #[derive(Default)]
@@ -29,11 +69,70 @@ pub enum Value {
     String(String),
     #[default]
     Undefined,
+    Tuple(Vec<ValueRef>),
     Array(Vec<ValueRef>),
+    Map(IndexMap<Primitive, ValueRef>),
     Object(Box<dyn Object>),
-    Function(Box<dyn Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError>>),
+    Function(FunctionId),
+    ExternalFunction(Box<dyn Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError>>),
     Iterator(Box<dyn Iterator<Item = ValueRef>>),
     Range(Range),
+}
+
+impl Value {
+    pub fn as_bool(&self) -> Result<bool, RuntimeError> {
+        match self {
+            Value::Boolean(b) => Ok(*b),
+            _ => Err(RuntimeError::invalid_operation("not a bool")),
+        }
+    }
+
+    pub fn as_integer(&self) -> Result<i64, RuntimeError> {
+        match self {
+            Value::Integer(i) => Ok(*i),
+            _ => Err(RuntimeError::invalid_operation("not an integer")),
+        }
+    }
+
+    pub fn as_float(&self) -> Result<f64, RuntimeError> {
+        match self {
+            Value::Float(f) => Ok(*f),
+            _ => Err(RuntimeError::invalid_operation("not a float")),
+        }
+    }
+
+    pub fn as_string(&self) -> Result<&str, RuntimeError> {
+        match self {
+            Value::String(s) => Ok(s),
+            _ => Err(RuntimeError::invalid_operation("not a string")),
+        }
+    }
+
+    pub fn as_primitive(&self) -> Result<Primitive, RuntimeError> {
+        match self {
+            Value::Boolean(b) => Ok(Primitive::Boolean(*b)),
+            Value::Byte(b) => Ok(Primitive::Byte(*b)),
+            Value::Integer(i) => Ok(Primitive::Integer(*i)),
+            Value::Float(f) => Ok(Primitive::Float(*f)),
+            Value::Char(c) => Ok(Primitive::Char(*c)),
+            Value::String(s) => Ok(Primitive::String(s.clone())),
+            _ => Err(RuntimeError::invalid_operation("not a primitive")),
+        }
+    }
+
+    pub fn is_undefined(&self) -> bool {
+        match self {
+            Value::Undefined => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_array(&self) -> bool {
+        match self {
+            Value::Array(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Debug for Value {
@@ -46,11 +145,14 @@ impl fmt::Debug for Value {
             Self::Char(arg0) => f.debug_tuple("Char").field(arg0).finish(),
             Self::String(arg0) => f.debug_tuple("String").field(arg0).finish(),
             Self::Undefined => write!(f, "Undefined"),
+            Self::Tuple(arg0) => f.debug_tuple("Tuple").field(arg0).finish(),
             Self::Array(arg0) => f.debug_tuple("Array").field(arg0).finish(),
+            Self::Map(arg0) => f.debug_tuple("Map").field(arg0).finish(),
             Self::Object(arg0) => f.debug_tuple("Object").field(arg0).finish(),
+            Self::Function(arg0) => f.debug_tuple("Function").field(arg0).finish(),
             Self::Range(arg0) => f.debug_tuple("Range").field(arg0).finish(),
             Self::Iterator(arg0) => f.debug_tuple("Iterator").finish(),
-            Self::Function(arg0) => f.debug_tuple("Function").finish(),
+            Self::ExternalFunction(arg0) => f.debug_tuple("Function").finish(),
         }
     }
 }
@@ -65,6 +167,16 @@ impl fmt::Display for Value {
             Self::Char(arg0) => f.write_str(&format!("{}", arg0)),
             Self::String(arg0) => f.write_str(&arg0.to_string()),
             Self::Undefined => f.write_str("<undefined>"),
+            Self::Tuple(arg0) => {
+                f.write_str("(")?;
+                if let Some((last, rest)) = arg0.split_last() {
+                    for item in rest {
+                        f.write_fmt(format_args!("{},", item))?;
+                    }
+                    f.write_str(&format!("{}", last))?;
+                }
+                f.write_str(")")
+            }
             Self::Array(arg0) => {
                 f.write_str("[")?;
                 if let Some((last, rest)) = arg0.split_last() {
@@ -75,10 +187,18 @@ impl fmt::Display for Value {
                 }
                 f.write_str("]")
             }
+            Self::Map(map) => {
+                f.write_str("{")?;
+                for (k, v) in map {
+                    f.write_fmt(format_args!("{}:{},", k, v))?;
+                }
+                f.write_str("}")
+            }
+            Self::Function(id) => f.write_str(&format!("<Function {}>", id.as_usize())),
             Self::Object(_) => f.write_str("<Object>"),
             Self::Range(arg0) => f.write_str(&format!("<{}..={}>", arg0.begin, arg0.end)),
             Self::Iterator(_) => f.write_str("<Iterator>"),
-            Self::Function(_) => f.write_str("<Function>"),
+            Self::ExternalFunction(_) => f.write_str("<ExternalFunction>"),
         }
     }
 }
@@ -259,7 +379,20 @@ pub trait Object: Debug {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation("Object is not callable"))
     }
-    fn property(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+
+    fn property_get(&self, prop: &str) -> Result<ValueRef, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            "Object property not supported",
+        ))
+    }
+
+    fn property_set(&mut self, prop: &str, value: ValueRef) -> Result<(), RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            "Object property not supported",
+        ))
+    }
+
+    fn property_call(&mut self, prop: &str, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         Err(RuntimeError::invalid_operation(
             "Object property not supported",
         ))
@@ -277,9 +410,10 @@ impl Operate for Value {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l + r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l + r)),
             (Value::String(l), Value::String(r)) => Ok(Value::String(format!("{}{}", l, r))),
-            _ => Err(crate::vm::RuntimeError::invalid_operation(
-                "Invalid operands for addition",
-            )),
+            _ => Err(crate::vm::RuntimeError::invalid_operation(format!(
+                "Invalid operands for addition, left: {}, right: {}",
+                self, other
+            ))),
         }
     }
 
@@ -431,10 +565,68 @@ impl Operate for Value {
         }
     }
 
+    fn index_get(&self, index: ValueRef) -> Result<ValueRef, RuntimeError> {
+        match self {
+            Value::Tuple(t) => {
+                let index = index.borrow().deref().as_integer()? as usize;
+                if index >= t.len() {
+                    Err(RuntimeError::invalid_operation("Tuple index out of bounds"))
+                } else {
+                    Ok(t[index as usize].clone())
+                }
+            }
+            Value::Array(a) => {
+                let index = index.borrow().deref().as_integer()? as usize;
+                if index >= a.len() {
+                    Err(RuntimeError::invalid_operation("Array index out of bounds"))
+                } else {
+                    Ok(a[index as usize].clone())
+                }
+            }
+            Value::Map(m) => {
+                let index = index.borrow();
+                let index = index.deref().as_primitive()?;
+                if m.contains_key(&index) {
+                    Ok(m[&index].clone())
+                } else {
+                    Err(RuntimeError::invalid_operation("Map index out of bounds"))
+                }
+            }
+            _ => Err(RuntimeError::invalid_operation("object not indexable")),
+        }
+    }
+
+    fn index_set(&mut self, index: ValueRef, value: ValueRef) -> Result<(), RuntimeError> {
+        match self {
+            Value::Tuple(t) => {
+                let index = index.borrow().deref().as_integer()? as usize;
+                if index >= t.len() {
+                    return Err(RuntimeError::invalid_operation("Tuple index out of bounds"));
+                }
+                t[index] = value;
+                Ok(())
+            }
+            Value::Array(a) => {
+                let index = index.borrow().deref().as_integer()? as usize;
+                if index >= a.len() {
+                    return Err(RuntimeError::invalid_operation("Array index out of bounds"));
+                }
+                a[index] = value;
+                Ok(())
+            }
+            Value::Map(m) => {
+                let index = index.borrow().deref().as_primitive()?;
+                m.insert(index, value);
+                Ok(())
+            }
+            _ => Err(RuntimeError::invalid_operation("object not indexable")),
+        }
+    }
+
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, crate::vm::RuntimeError> {
         match self {
             Value::Object(ref mut o) => o.call(args),
-            Value::Function(ref mut f) => f(args),
+            Value::ExternalFunction(ref mut f) => f(args),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for function call",
             )),
@@ -444,7 +636,6 @@ impl Operate for Value {
     fn call_member(
         &mut self,
         member: &str,
-        this: ValueRef,
         args: &[ValueRef],
     ) -> Result<Option<Value>, crate::vm::RuntimeError> {
         match self {
@@ -460,8 +651,11 @@ impl Operate for Value {
     ) -> Result<Option<Box<dyn Iterator<Item = ValueRef>>>, crate::vm::RuntimeError> {
         match self {
             Value::Object(ref mut o) => o.make_iterator(),
-            Value::Array(a) => Ok(Some(Box::new(a.clone().into_iter()))),
             Value::Range(r) => Ok(Some(Box::new(RangeIterator::new(r)?))),
+            Value::Array(a) => Ok(Some(Box::new(a.clone().into_iter()))),
+            Value::Map(m) => Ok(Some(Box::new(m.clone().into_iter().map(|(k, v)| {
+                ValueRef::new(Value::Tuple(vec![ValueRef::new(Value::from(k)), v]))
+            })))),
             _ => Err(crate::vm::RuntimeError::invalid_operation(
                 "Invalid operand for iterator call",
             )),
