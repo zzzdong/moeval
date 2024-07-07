@@ -4,44 +4,14 @@ use std::ops::{Add, Deref, DerefMut};
 
 use indexmap::IndexMap;
 
-use crate::compiler::CompileError;
+use crate::error::{Error, RuntimeError};
 use crate::ir::builder::{Block, FlowGraph, Function, Module};
 use crate::ir::{BlockId, FunctionId};
-use crate::value::{Operate, Range, ValueRef};
+// use crate::object::{NativeFunction, Value, ValueRef};
 use crate::{
     compiler::Compiler,
     ir::instruction::{Address, Instruction, Opcode},
-    value::Value,
 };
-
-#[derive(Debug)]
-pub enum RuntimeError {
-    Compile(CompileError),
-    InvalidOperation(String),
-    SymbolNotFound(String),
-}
-
-impl RuntimeError {
-    pub fn symbol_not_found(name: impl ToString) -> Self {
-        RuntimeError::SymbolNotFound(name.to_string())
-    }
-
-    pub fn invalid_operation(msg: impl Into<String>) -> Self {
-        RuntimeError::InvalidOperation(msg.into())
-    }
-}
-
-impl std::fmt::Display for RuntimeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeError::Compile(err) => write!(f, "Compile error: {}", err),
-            RuntimeError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
-            RuntimeError::SymbolNotFound(name) => write!(f, "Symbol not found: {}", name),
-        }
-    }
-}
-
-impl std::error::Error for RuntimeError {}
 
 pub struct Environment {
     symbols: HashMap<String, ValueRef>,
@@ -54,19 +24,20 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: impl ToString, value: Value) {
-        self.symbols.insert(name.to_string(), ValueRef::new(value));
+    pub fn define(&mut self, name: impl ToString, value: impl Into<Value>) {
+        self.symbols.insert(name.to_string(), ValueRef::new(value.into()));
     }
 
     pub fn define_function<F>(&mut self, name: impl ToString, func: F)
     where
         F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
     {
-        self.define(name, Value::ExternalFunction(Box::new(func)));
+        let name = name.to_string();
+        self.define(name.clone(), NativeFunction::new(name, Box::new(func)));
     }
 
-    pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
-        self.symbols.get(name.as_ref()).cloned()
+    pub fn get(&self, name: impl AsRef<str>) -> Option<&ValueRef> {
+        self.symbols.get(name.as_ref())
     }
 }
 
@@ -178,8 +149,8 @@ impl Evaluator {
         Self {}
     }
 
-    pub fn eval(&mut self, script: &str, env: &Environment) -> Result<Option<Value>, RuntimeError> {
-        let module = Compiler::compile(script).map_err(RuntimeError::Compile)?;
+    pub fn eval(&mut self, script: &str, env: &Environment) -> Result<Option<Value>, Error> {
+        let module = Compiler::compile(script)?;
 
         log::debug!("module {module}");
 
@@ -514,10 +485,9 @@ impl Evaluator {
             .get_function(id)
             .ok_or(RuntimeError::invalid_operation("Function not found"))?;
 
-        let args: Vec<ValueRef> =
-            args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
+        let args: Vec<ValueRef> = args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
 
-            ctx.stack.alloc_frame();
+        ctx.stack.alloc_frame();
 
         for arg in args {
             ctx.stack.store_argument(arg);
@@ -650,7 +620,6 @@ mod tests {
         let mut eval = Evaluator::new();
 
         env.define_function("println", println);
-
 
         let script = r#"
         let sum = 0;

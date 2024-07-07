@@ -6,3 +6,4 @@ mod ir;
 mod parser;
 mod value;
 mod vm;
+mod object;

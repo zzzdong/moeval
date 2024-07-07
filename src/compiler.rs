@@ -1,27 +1,6 @@
-use crate::{codegen::Codegen, ir::builder::Module, parser::ParseError};
+use crate::{codegen::Codegen, error::CompileError, ir::builder::Module};
 
-#[derive(Debug)]
-pub enum CompileError {
-    Parse(ParseError),
-    Semantics(String),
-}
 
-impl From<ParseError> for CompileError {
-    fn from(error: ParseError) -> Self {
-        CompileError::Parse(error)
-    }
-}
-
-impl std::fmt::Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompileError::Parse(error) => write!(f, "Parse error: {}", error),
-            CompileError::Semantics(message) => write!(f, "Semantics error: {}", message),
-        }
-    }
-}
-
-impl std::error::Error for CompileError {}
 
 pub struct Compiler {}
 
