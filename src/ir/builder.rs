@@ -1,6 +1,5 @@
-use core::fmt;
-use std::ops::Add;
 use indexmap::IndexSet;
+use std::fmt;
 
 use super::instruction::*;
 use super::types::*;
@@ -193,6 +192,18 @@ impl<'a> Builder<'a> {
         self.flow_graph_mut().set_entry_block(block);
     }
 
+    pub fn unaryop(&mut self, op: Opcode, src: Address) -> Address {
+        let result = self.flow_graph_mut().create_alloc();
+
+        self.flow_graph_mut().emit(Instruction::UnaryOp {
+            op,
+            dst: result,
+            src,
+        });
+
+        result
+    }
+
     pub fn binop(&mut self, op: Opcode, lhs: Address, rhs: Address) -> Address {
         let result = self.flow_graph_mut().create_alloc();
 
@@ -207,10 +218,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn assign(&mut self, dst: Address, src: Address) {
-        self.flow_graph_mut().emit(Instruction::Store {
-            dst,
-            src,
-        })
+        self.flow_graph_mut().emit(Instruction::Store { dst, src })
     }
 
     pub fn get_property(&mut self, object: Address, property: &str) -> Address {
@@ -281,8 +289,8 @@ impl<'a> Builder<'a> {
     pub fn br_if(&mut self, condition: Address, true_blk: BlockId, false_blk: BlockId) {
         self.flow_graph_mut().emit(Instruction::BrIf {
             condition,
-            true_blk: true_blk,
-            false_blk: false_blk,
+            true_blk,
+            false_blk,
         });
     }
 
@@ -315,10 +323,14 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn range(&mut self, begin: Address, end: Address) -> Address {
+    pub fn range(&mut self, begin: Address, end: Address, bounded: bool) -> Address {
         let result = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::Range { begin, end, result });
+        self.flow_graph_mut().emit(Instruction::Range {
+            begin,
+            end,
+            bounded,
+            result,
+        });
         result
     }
 
@@ -337,8 +349,7 @@ impl<'a> Builder<'a> {
 
     pub fn new_map(&mut self) -> Address {
         let map = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::NewMap { dst: map });
+        self.flow_graph_mut().emit(Instruction::NewMap { dst: map });
         map
     }
 
@@ -350,8 +361,11 @@ impl<'a> Builder<'a> {
     }
 
     pub fn index_set(&mut self, object: Address, index: Address, value: Address) {
-        self.flow_graph_mut()
-            .emit(Instruction::IndexSet { object, index, value });
+        self.flow_graph_mut().emit(Instruction::IndexSet {
+            object,
+            index,
+            value,
+        });
     }
 
     // fn new_object(&mut self) -> ValueRef {

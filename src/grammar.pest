@@ -126,8 +126,8 @@ closure = { "|" ~ call_arg_list ~ "|" ~ block }
 
 /// Atom
 atom = {
-    identifier
-  | literal
+  literal
+  | identifier
   | tuple
   | array
   | map
@@ -185,7 +185,7 @@ prefix_operator = _{ not_operator | negative_operator }
 
 /// Branches or sequences.
 infix_operator = _{
-    range_operator
+  range_to_operator
   | add_assign_operator
   | sub_assign_operator
   | mul_assign_operator
@@ -283,7 +283,10 @@ pow_operator = { "^" }
 try_operator = { "?" }
 
 /// A range operator.
-range_operator = { "..=" }
+range_operator = { ".." }
+
+/// A range to operator.
+range_to_operator = { "..=" }
 
 /// A and operator.
 and_operator = { "&&" }

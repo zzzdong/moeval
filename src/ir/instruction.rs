@@ -35,6 +35,8 @@ pub enum Opcode {
     GreaterEqual,
     Equal,
     NotEqual,
+    Not, // eg: !true
+    Neg, // eg: -1
 }
 
 impl fmt::Display for Opcode {
@@ -53,6 +55,8 @@ impl fmt::Display for Opcode {
             Opcode::GreaterEqual => write!(f, "gte"),
             Opcode::Equal => write!(f, "eq"),
             Opcode::NotEqual => write!(f, "ne"),
+            Opcode::Not => write!(f, "not"),
+            Opcode::Neg => write!(f, "neg"),
         }
     }
 }
@@ -77,6 +81,11 @@ pub enum Instruction {
     LoadArg {
         index: usize,
         dst: Address,
+    },
+    UnaryOp {
+        op: Opcode,
+        dst: Address,
+        src: Address,
     },
     BinaryOp {
         op: Opcode,
@@ -128,6 +137,7 @@ pub enum Instruction {
     Range {
         begin: Address,
         end: Address,
+        bounded: bool,
         result: Address,
     },
     NewArray {
@@ -167,6 +177,9 @@ impl std::fmt::Display for Instruction {
             }
             Instruction::Store { dst, src } => {
                 write!(f, "store {} {}", dst, src)
+            }
+            Instruction::UnaryOp { op, dst, src } => {
+                write!(f, "{} = {} {}", dst, op, src)
             }
             Instruction::BinaryOp { op, dst, lhs, rhs } => {
                 write!(f, "{} = {} {} {}", dst, op, lhs, rhs)
@@ -250,8 +263,19 @@ impl std::fmt::Display for Instruction {
                     after_blk.as_usize()
                 )
             }
-            Instruction::Range { begin, end, result } => {
-                write!(f, "range {} {} {}", begin, end, result)
+            Instruction::Range {
+                begin,
+                end,
+                bounded,
+                result,
+            } => {
+                write!(f, "range {}..", begin)?;
+                if *bounded {
+                    write!(f, "={}", end)?;
+                } else {
+                    write!(f, "{}", end)?;
+                }
+                write!(f, " {}", result)
             }
             Instruction::NewArray { dst: array, size } => {
                 write!(f, "{} = new_array", array)?;
@@ -269,7 +293,11 @@ impl std::fmt::Display for Instruction {
             Instruction::IndexGet { dst, object, index } => {
                 write!(f, "{} = index_get {} {}", dst, object, index)
             }
-            Instruction::IndexSet { object, index, value } => {
+            Instruction::IndexSet {
+                object,
+                index,
+                value,
+            } => {
                 write!(f, "index_set {} {} {}", object, index, value)
             }
         }

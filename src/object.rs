@@ -1,10 +1,8 @@
 use core::fmt;
-use std::any::{type_name, Any, TypeId};
-use std::{cell::RefCell, ops::Deref, rc::Rc};
+use std::any::Any;
 
 use crate::error::RuntimeError;
-use crate::ir::types::Name;
-use crate::value::Value;
+use crate::value::{Value, ValueRef};
 
 #[derive(Debug, Clone, Copy)]
 pub enum OperateKind {
@@ -27,6 +25,7 @@ pub enum OperateKind {
     MakeIterator,
     IterateNext,
     Display,
+    TypeCast,
 }
 
 impl fmt::Display for OperateKind {
@@ -51,6 +50,7 @@ impl fmt::Display for OperateKind {
             OperateKind::MakeIterator => write!(f, "make_iterator"),
             OperateKind::IterateNext => write!(f, "iterate_next"),
             OperateKind::Display => write!(f, "display"),
+            OperateKind::TypeCast => write!(f, "type_cast"),
         }
     }
 }
@@ -99,7 +99,6 @@ impl fmt::Display for OperateError {
     }
 }
 
-
 #[derive(Debug)]
 pub struct BoxedObject(Box<dyn Object>);
 
@@ -139,8 +138,6 @@ impl BoxedObject {
         }
     }
 }
-
-
 
 pub trait Object: std::any::Any + std::fmt::Debug {
     fn display(&self) -> String {
@@ -242,14 +239,14 @@ pub trait Object: std::any::Any + std::fmt::Debug {
         ))
     }
 
-    fn index_set(&mut self, index: ValueRef, value: ValueRef) -> Result<(), RuntimeError> {
+    fn index_set(&mut self, index: &Value, value: ValueRef) -> Result<(), RuntimeError> {
         Err(RuntimeError::invalid_operation(
             OperateKind::IndexSet,
             "unimplemented",
         ))
     }
 
-    fn property_get(&mut self, member: &str) -> Result<Option<Value>, RuntimeError> {
+    fn property_get(&mut self, member: &str) -> Result<Value, RuntimeError> {
         Err(RuntimeError::invalid_operation(
             OperateKind::PropertyGet,
             "unimplemented",
@@ -289,233 +286,204 @@ pub trait Object: std::any::Any + std::fmt::Debug {
     }
 }
 
-impl Object for bool {
-    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.downcast_ref::<bool>()?;
-        match (self, other) {
-            (true, true) => Ok(std::cmp::Ordering::Equal),
-            (true, false) => Ok(std::cmp::Ordering::Greater),
-            (false, true) => Ok(std::cmp::Ordering::Less),
-            (false, false) => Ok(std::cmp::Ordering::Equal),
-        }
-    }
-}
+// impl Object for bool {
+//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+//         let other = other.downcast_ref::<bool>()?;
+//         match (self, other) {
+//             (true, true) => Ok(std::cmp::Ordering::Equal),
+//             (true, false) => Ok(std::cmp::Ordering::Greater),
+//             (false, true) => Ok(std::cmp::Ordering::Less),
+//             (false, false) => Ok(std::cmp::Ordering::Equal),
+//         }
+//     }
+// }
 
-impl Object for i64 {
-    fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(*self + *other)))
-    }
+// impl Object for i64 {
+//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(*self + *other)))
+//     }
 
-    fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(*self - *other)))
-    }
+//     fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(*self - *other)))
+//     }
 
-    fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(*self * *other)))
-    }
+//     fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(*self * *other)))
+//     }
 
-    fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(*self / *other)))
-    }
+//     fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(*self / *other)))
+//     }
 
-    fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(*self % *other)))
-    }
+//     fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(*self % *other)))
+//     }
 
-    fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        Ok(Value::new(Box::new(i64::pow(*self, *other as u32))))
-    }
+//     fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         Ok(Value::object(Box::new(i64::pow(*self, *other as u32))))
+//     }
 
-    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.downcast_ref::<i64>()?;
-        match self.cmp(other) {
-            std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
-            std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
-            std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
-        }
-    }
+//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+//         let other = other.downcast_ref::<i64>()?;
+//         match self.cmp(other) {
+//             std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
+//             std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
+//             std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
+//         }
+//     }
 
-    fn property_get(&mut self, member: &str) -> Result<Option<Value>, RuntimeError> {
-        match member {
-            "max" => Ok(Some(Value::new(Box::new(i64::MAX)))),
-            "min" => Ok(Some(Value::new(Box::new(i64::MIN)))),
-            _ => Err(RuntimeError::invalid_operation(
-                OperateKind::PropertyGet,
-                format!("{} is not a member of {}", member, type_name::<i64>()),
-            )),
-        }
-    }
-}
+//     fn property_get(&mut self, member: &str) -> Result<Option<Value>, RuntimeError> {
+//         match member {
+//             "max" => Ok(Some(Value::object(Box::new(i64::MAX)))),
+//             "min" => Ok(Some(Value::object(Box::new(i64::MIN)))),
+//             _ => Err(RuntimeError::invalid_operation(
+//                 OperateKind::PropertyGet,
+//                 format!("{} is not a member of {}", member, type_name::<i64>()),
+//             )),
+//         }
+//     }
+// }
 
-impl Object for f64 {
-    fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(*self + *other)))
-    }
+// impl Object for f64 {
+//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(*self + *other)))
+//     }
 
-    fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(*self - *other)))
-    }
+//     fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(*self - *other)))
+//     }
 
-    fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(*self * *other)))
-    }
+//     fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(*self * *other)))
+//     }
 
-    fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(*self / *other)))
-    }
+//     fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(*self / *other)))
+//     }
 
-    fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(*self % *other)))
-    }
+//     fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(*self % *other)))
+//     }
 
-    fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        Ok(Value::new(Box::new(f64::powf(*self, *other))))
-    }
+//     fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         Ok(Value::object(Box::new(f64::powf(*self, *other))))
+//     }
 
-    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.downcast_ref::<f64>()?;
-        match self.partial_cmp(other) {
-            Some(std::cmp::Ordering::Less) => Ok(std::cmp::Ordering::Less),
-            Some(std::cmp::Ordering::Equal) => Ok(std::cmp::Ordering::Equal),
-            Some(std::cmp::Ordering::Greater) => Ok(std::cmp::Ordering::Greater),
-            None => Err(RuntimeError::invalid_operation(
-                OperateKind::Compare,
-                "unimplemented",
-            )),
-        }
-    }
+//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+//         let other = other.downcast_ref::<f64>()?;
+//         match self.partial_cmp(other) {
+//             Some(std::cmp::Ordering::Less) => Ok(std::cmp::Ordering::Less),
+//             Some(std::cmp::Ordering::Equal) => Ok(std::cmp::Ordering::Equal),
+//             Some(std::cmp::Ordering::Greater) => Ok(std::cmp::Ordering::Greater),
+//             None => Err(RuntimeError::invalid_operation(
+//                 OperateKind::Compare,
+//                 "unimplemented",
+//             )),
+//         }
+//     }
 
-    fn property_get(&mut self, member: &str) -> Result<Option<Value>, RuntimeError> {
-        match member {
-            "max" => Ok(Some(Value::new(Box::new(f64::MAX)))),
-            "min" => Ok(Some(Value::new(Box::new(f64::MIN)))),
-            "nan" => Ok(Some(Value::new(Box::new(f64::NAN)))),
-            _ => Err(RuntimeError::invalid_operation(
-                OperateKind::PropertyGet,
-                format!("{} is not a member of {}", member, type_name::<f64>()),
-            )),
-        }
-    }
-}
+//     fn property_get(&mut self, member: &str) -> Result<Option<Value>, RuntimeError> {
+//         match member {
+//             "max" => Ok(Some(Value::object(Box::new(f64::MAX)))),
+//             "min" => Ok(Some(Value::object(Box::new(f64::MIN)))),
+//             "nan" => Ok(Some(Value::object(Box::new(f64::NAN)))),
+//             _ => Err(RuntimeError::invalid_operation(
+//                 OperateKind::PropertyGet,
+//                 format!("{} is not a member of {}", member, type_name::<f64>()),
+//             )),
+//         }
+//     }
+// }
 
-impl Object for char {
-    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.downcast_ref::<char>()?;
-        match self.cmp(other) {
-            std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
-            std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
-            std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
-        }
-    }
+// impl Object for char {
+//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+//         let other = other.downcast_ref::<char>()?;
+//         match self.cmp(other) {
+//             std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
+//             std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
+//             std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
+//         }
+//     }
 
-    fn property_call(
-        &mut self,
-        member: &str,
-        args: &[ValueRef],
-    ) -> Result<Option<Value>, RuntimeError> {
-        if !args.is_empty() {
-            return Err(RuntimeError::invalid_operation(
-                OperateKind::PropertyCall,
-                format!("{} does not take any arguments", member),
-            ));
-        }
+//     fn property_call(
+//         &mut self,
+//         member: &str,
+//         args: &[ValueRef],
+//     ) -> Result<Option<Value>, RuntimeError> {
+//         if !args.is_empty() {
+//             return Err(RuntimeError::invalid_operation(
+//                 OperateKind::PropertyCall,
+//                 format!("{} does not take any arguments", member),
+//             ));
+//         }
 
-        match member {
-            "is_ascii" => Ok(Some(Value::new(Box::new(self.is_ascii())))),
-            "is_alphanumeric" => Ok(Some(Value::new(Box::new(self.is_alphanumeric())))),
-            "is_ascii_alphanumeric" => Ok(Some(Value::new(Box::new(self.is_ascii_alphanumeric())))),
-            _ => Err(RuntimeError::invalid_operation(
-                OperateKind::PropertyGet,
-                format!("{} is not a member of {}", member, type_name::<char>()),
-            )),
-        }
-    }
-}
+//         match member {
+//             "is_ascii" => Ok(Some(Value::object(Box::new(self.is_ascii())))),
+//             "is_alphanumeric" => Ok(Some(Value::object(Box::new(self.is_alphanumeric())))),
+//             "is_ascii_alphanumeric" => Ok(Some(Value::object(Box::new(self.is_ascii_alphanumeric())))),
+//             _ => Err(RuntimeError::invalid_operation(
+//                 OperateKind::PropertyGet,
+//                 format!("{} is not a member of {}", member, type_name::<char>()),
+//             )),
+//         }
+//     }
+// }
 
-impl Object for String {
-    fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-        let other = other.downcast_ref::<String>()?;
-        Ok(Value::new(Box::new(self.clone() + other)))
-    }
+// impl Object for String {
+//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
+//         let other = other.downcast_ref::<String>()?;
+//         Ok(Value::object(Box::new(self.clone() + other)))
+//     }
 
-    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.downcast_ref::<String>()?;
-        match self.cmp(other) {
-            std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
-            std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
-            std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
-        }
-    }
+//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+//         let other = other.downcast_ref::<String>()?;
+//         match self.cmp(other) {
+//             std::cmp::Ordering::Less => Ok(std::cmp::Ordering::Less),
+//             std::cmp::Ordering::Equal => Ok(std::cmp::Ordering::Equal),
+//             std::cmp::Ordering::Greater => Ok(std::cmp::Ordering::Greater),
+//         }
+//     }
 
-    fn property_call(
-        &mut self,
-        member: &str,
-        args: &[ValueRef],
-    ) -> Result<Option<Value>, RuntimeError> {
-        match member {
-            "to_lowercase" => {
-                if !args.is_empty() {
-                    return Err(RuntimeError::invalid_operation(
-                        OperateKind::PropertyCall,
-                        format!("{} does not take any arguments", member),
-                    ));
-                }
-                Ok(Some(Value::new(Box::new(self.to_lowercase()))))
-            }
-            "to_uppercase" => {
-                if !args.is_empty() {
-                    return Err(RuntimeError::invalid_operation(
-                        OperateKind::PropertyCall,
-                        format!("{} does not take any arguments", member),
-                    ));
-                }
-                Ok(Some(Value::new(Box::new(self.to_uppercase()))))
-            }
-            _ => Err(RuntimeError::invalid_operation(
-                OperateKind::PropertyCall,
-                format!("{} is not a member of {}", member, type_name::<String>()),
-            )),
-        }
-    }
-}
-
-pub struct NativeFunction {
-    pub name: String,
-    pub func: Box<dyn Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError>>,
-}
-
-impl NativeFunction {
-    pub fn new<F>(name: impl ToString, func: F) -> Self
-    where
-        F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
-    {
-        Self {
-            name: name.to_string(),
-            func: Box::new(func),
-        }
-    }
-}
-
-impl fmt::Debug for NativeFunction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<NativeFunction`{}`>", self.name)
-    }
-}
-
-impl Object for NativeFunction {
-    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
-        (self.func)(args)
-    }
-}
+//     fn property_call(
+//         &mut self,
+//         member: &str,
+//         args: &[ValueRef],
+//     ) -> Result<Option<Value>, RuntimeError> {
+//         match member {
+//             "to_lowercase" => {
+//                 if !args.is_empty() {
+//                     return Err(RuntimeError::invalid_operation(
+//                         OperateKind::PropertyCall,
+//                         format!("{} does not take any arguments", member),
+//                     ));
+//                 }
+//                 Ok(Some(Value::object(Box::new(self.to_lowercase()))))
+//             }
+//             "to_uppercase" => {
+//                 if !args.is_empty() {
+//                     return Err(RuntimeError::invalid_operation(
+//                         OperateKind::PropertyCall,
+//                         format!("{} does not take any arguments", member),
+//                     ));
+//                 }
+//                 Ok(Some(Value::object(Box::new(self.to_uppercase()))))
+//             }
+//             _ => Err(RuntimeError::invalid_operation(
+//                 OperateKind::PropertyCall,
+//                 format!("{} is not a member of {}", member, type_name::<String>()),
+//             )),
+//         }
+//     }
+// }

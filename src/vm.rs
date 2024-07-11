@@ -1,13 +1,13 @@
-use std::cell::{Ref, RefMut};
+use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::ops::{Add, Deref, DerefMut};
+use std::ops::{Deref, DerefMut};
 
-use indexmap::IndexMap;
-
-use crate::error::{Error, RuntimeError};
-use crate::ir::builder::{Block, FlowGraph, Function, Module};
+use crate::error::{CompileError, Error, RuntimeError};
+use crate::ir::builder::{Block, Module};
 use crate::ir::{BlockId, FunctionId};
-// use crate::object::{NativeFunction, Value, ValueRef};
+use crate::object::Object;
+use crate::types::{Array, Callable, Enumerator, Map, NativeFunction, Range, UserFunction};
+use crate::value::{Value, ValueRef};
 use crate::{
     compiler::Compiler,
     ir::instruction::{Address, Instruction, Opcode},
@@ -25,19 +25,31 @@ impl Environment {
     }
 
     pub fn define(&mut self, name: impl ToString, value: impl Into<Value>) {
-        self.symbols.insert(name.to_string(), ValueRef::new(value.into()));
+        self.symbols
+            .insert(name.to_string(), ValueRef::new(value.into()));
     }
 
-    pub fn define_function<F>(&mut self, name: impl ToString, func: F)
-    where
-        F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
-    {
-        let name = name.to_string();
-        self.define(name.clone(), NativeFunction::new(name, Box::new(func)));
+    // pub fn define_function<F>(&mut self, name: impl ToString, func: F)
+    // where
+    //     F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
+    // {
+    //     let name = name.to_string();
+    //     self.define(name.clone(), NativeFunction::new(name, Box::new(func)));
+    // }
+
+    pub fn define_function<Args: 'static>(
+        &mut self,
+        name: impl ToString,
+        callable: impl Callable<Args>,
+    ) {
+        self.define(
+            name.to_string(),
+            NativeFunction::new(name, Box::new(callable.into_function())),
+        );
     }
 
-    pub fn get(&self, name: impl AsRef<str>) -> Option<&ValueRef> {
-        self.symbols.get(name.as_ref())
+    pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
+        self.symbols.get(name.as_ref()).cloned()
     }
 }
 
@@ -71,7 +83,7 @@ impl StackFrame {
     fn load_value(&self, addr: Address) -> ValueRef {
         match addr {
             Address::Stack(index) => self.values[index].clone(),
-            Address::Function(func) => ValueRef::new(Value::Function(func)),
+            Address::Function(func) => ValueRef::new(Value::new(UserFunction::new(func))),
         }
     }
 
@@ -157,7 +169,7 @@ impl Evaluator {
         let constants = module
             .constants
             .iter()
-            .map(|v| ValueRef::new(v.clone().into()))
+            .map(|v| ValueRef::new(Value::from_primitive(v.clone())))
             .collect();
 
         let mut context = Context {
@@ -169,20 +181,23 @@ impl Evaluator {
 
         let entry = module
             .entry
-            .ok_or(RuntimeError::invalid_operation("No entry point"))?;
+            .ok_or(CompileError::Semantics("No entry point".to_string()))?;
 
         let func = module
             .get_function(entry)
-            .ok_or(RuntimeError::invalid_operation("Function not found"))?;
+            .ok_or(CompileError::Semantics("Function not found".to_string()))?;
 
-        self.eval_function(&mut context, func)
-            .map(|r| r.map(|v| v.take()))
+        let ret = self
+            .eval_function(&mut context, func)
+            .map(|r| r.map(|v| v.take()))?;
+
+        Ok(ret)
     }
 
     fn eval_function(
         &mut self,
         ctx: &mut Context,
-        func: &Function,
+        func: &crate::ir::builder::Function,
     ) -> Result<Option<ValueRef>, RuntimeError> {
         ctx.stack.alloc_frame();
         self.eval_call(ctx, func)
@@ -193,9 +208,9 @@ impl Evaluator {
         block: &Block,
         ctx: &mut Context,
     ) -> Result<ControlFlow, RuntimeError> {
-        let mut instructions = block.instructions.iter();
+        let instructions = block.instructions.iter();
 
-        while let Some(inst) = instructions.next() {
+        for inst in instructions {
             let inst = inst.clone();
 
             log::debug!("inst: {inst:?}");
@@ -225,6 +240,18 @@ impl Evaluator {
                     let value = ctx.stack.load_argument(index);
                     ctx.stack.store_value(dst, value.clone());
                 }
+                Instruction::UnaryOp { op, dst, src } => {
+                    let src = ctx.stack.load_value(src);
+                    let src = src.borrow();
+                    let src = src.deref();
+                    match op {
+                        Opcode::Neg | Opcode::Not => {
+                            let ret = Object::negate(src.deref())?;
+                            ctx.stack.store_value(dst, ValueRef::new(ret));
+                        }
+                        _ => unreachable!("Invalid opcode"),
+                    };
+                }
                 Instruction::BinaryOp {
                     op,
                     dst: result,
@@ -241,44 +268,62 @@ impl Evaluator {
                     let rhs = rhs.deref();
 
                     let ret = match op {
-                        Opcode::Add => Operate::add(lhs, rhs),
-                        Opcode::Sub => Operate::sub(lhs, rhs),
-                        Opcode::Mul => Operate::mul(lhs, rhs),
-                        Opcode::Div => Operate::div(lhs, rhs),
-                        Opcode::Mod => Operate::modulo(lhs, rhs),
-                        Opcode::Greater => Operate::gt(lhs, rhs),
-                        Opcode::GreaterEqual => Operate::ge(lhs, rhs),
-                        Opcode::Less => Operate::lt(lhs, rhs),
-                        Opcode::LessEqual => Operate::le(lhs, rhs),
-                        Opcode::Equal => Operate::eq(lhs, rhs),
-                        Opcode::NotEqual => Operate::ne(lhs, rhs),
-                        Opcode::And => Operate::and(lhs, rhs),
-                        Opcode::Or => Operate::or(lhs, rhs),
+                        Opcode::Add => Object::add(lhs.deref(), rhs)?,
+                        Opcode::Sub => Object::sub(lhs.deref(), rhs)?,
+                        Opcode::Mul => Object::mul(lhs.deref(), rhs)?,
+                        Opcode::Div => Object::div(lhs.deref(), rhs)?,
+                        Opcode::Mod => Object::modulo(lhs.deref(), rhs)?,
+                        Opcode::Greater => {
+                            Value::new(Object::compare(lhs.deref(), rhs)? == Ordering::Greater)
+                        }
+                        Opcode::GreaterEqual => {
+                            let ord = Object::compare(lhs.deref(), rhs)?;
+                            Value::new(ord == Ordering::Greater || ord == Ordering::Equal)
+                        }
+                        Opcode::Less => {
+                            Value::new(Object::compare(lhs.deref(), rhs)? == Ordering::Less)
+                        }
+                        Opcode::LessEqual => {
+                            let ord = Object::compare(lhs.deref(), rhs)?;
+                            Value::new(ord == Ordering::Less || ord == Ordering::Equal)
+                        }
+                        Opcode::Equal => {
+                            Value::new(Object::compare(lhs.deref(), rhs)? == Ordering::Equal)
+                        }
+                        Opcode::NotEqual => {
+                            Value::new(Object::compare(lhs.deref(), rhs)? != Ordering::Equal)
+                        }
+                        Opcode::And => Object::logic_and(lhs.deref(), rhs)?,
+                        Opcode::Or => Object::logic_or(lhs.deref(), rhs)?,
+                        _ => unreachable!("unreachable"),
                     };
 
-                    ctx.stack.store_value(result, ret.map(ValueRef::new)?);
+                    ctx.stack.store_value(result, ValueRef::new(ret));
                 }
-
-                Instruction::Range { begin, end, result } => {
-                    let value = Range::new(ctx.stack.load_value(begin), ctx.stack.load_value(end))?;
+                Instruction::Range {
+                    begin,
+                    end,
+                    bounded,
+                    result,
+                } => {
+                    let value = Range::new(
+                        ctx.stack.load_value(begin),
+                        ctx.stack.load_value(end),
+                        bounded,
+                    )?;
                     ctx.stack
-                        .store_value(result, ValueRef::new(Value::Range(value)));
+                        .store_value(result, ValueRef::new(Value::new(value)));
                 }
                 Instruction::MakeIterator { iter, result } => {
                     let iter = ctx.stack.load_value(iter);
-                    let mut iter = iter.borrow_mut();
+                    let iter = iter.borrow_mut();
 
-                    match iter.iterator()? {
-                        Some(iterator) => {
-                            ctx.stack
-                                .store_value(result, ValueRef::new(Value::Iterator(iterator)));
-                        }
-                        None => {
-                            return Err(RuntimeError::invalid_operation(
-                                "make iterator: not iterable",
-                            ));
-                        }
-                    }
+                    println!("make iterator: {:?}", iter);
+
+                    let iterator = iter.make_iterator()?;
+
+                    ctx.stack
+                        .store_value(result, ValueRef::new(Value::new(Enumerator::new(iterator))));
                 }
                 Instruction::IterateNext {
                     iter,
@@ -288,53 +333,46 @@ impl Evaluator {
                     let iterator = ctx.stack.load_value(iter);
                     let mut iterator = iterator.borrow_mut();
 
-                    match iterator.deref_mut() {
-                        Value::Iterator(iterator) => match iterator.next() {
-                            Some(element) => {
-                                ctx.stack.store_value(next, element);
-                            }
-                            None => {
-                                return Ok(ControlFlow::Block(after_blk));
-                            }
-                        },
-                        _ => {
-                            return Err(RuntimeError::invalid_operation(
-                                "iterate next: not iterator",
-                            ))
+                    let enumerator = iterator.try_downcast_mut::<Enumerator>()?;
+
+                    match enumerator.iterate_next()? {
+                        Some(element) => {
+                            ctx.stack.store_value(next, element);
+                        }
+                        None => {
+                            return Ok(ControlFlow::Block(after_blk));
                         }
                     }
                 }
+
                 Instruction::NewArray { dst, size } => {
                     let arr: Vec<ValueRef> = match size {
                         Some(s) => Vec::with_capacity(s),
                         None => Vec::new(),
                     };
 
-                    ctx.stack.store_value(dst, ValueRef::new(Value::Array(arr)));
+                    ctx.stack
+                        .store_value(dst, ValueRef::new(Value::new(Array::new(arr))));
                 }
                 Instruction::ArrayPush { array, value } => {
                     let element = ctx.stack.load_value(value);
                     let arr = ctx.stack.load_value(array);
                     let mut arr = arr.borrow_mut();
-                    match arr.deref_mut() {
-                        Value::Array(array) => {
-                            array.push(element);
-                        }
-                        _ => {
-                            return Err(RuntimeError::invalid_operation("array push: not array"));
-                        }
-                    }
+
+                    let array = arr.try_downcast_mut::<Array>()?;
+
+                    array.push(element);
                 }
                 Instruction::NewMap { dst } => {
-                    let map = Value::Map(IndexMap::new());
-                    ctx.stack.store_value(dst, ValueRef::new(map));
+                    ctx.stack
+                        .store_value(dst, ValueRef::new(Value::new(Map::new())));
                 }
                 Instruction::IndexGet { dst, object, index } => {
                     let object = ctx.stack.load_value(object);
                     let object = object.borrow();
                     let index = ctx.stack.load_value(index);
-                    let element = object.index_get(index)?;
-                    ctx.stack.store_value(dst, element);
+                    let value = object.index_get(&index.borrow())?;
+                    ctx.stack.store_value(dst, value);
                 }
                 Instruction::IndexSet {
                     object,
@@ -345,8 +383,9 @@ impl Evaluator {
                     let mut object = object.borrow_mut();
                     let index = ctx.stack.load_value(index);
                     let value = ctx.stack.load_value(value);
-                    object.index_set(index, value)?;
+                    object.index_set(&index.borrow(), value)?;
                 }
+
                 Instruction::Br { dst } => {
                     return Ok(ControlFlow::Block(dst));
                 }
@@ -357,50 +396,41 @@ impl Evaluator {
                 } => {
                     let cond = ctx.stack.load_value(condition);
                     let cond = cond.borrow();
-                    match *cond {
-                        Value::Boolean(b) => {
-                            if b {
-                                return Ok(ControlFlow::Block(true_blk));
-                            } else {
-                                return Ok(ControlFlow::Block(false_blk));
-                            }
-                        }
-                        _ => {
-                            return Err(RuntimeError::invalid_operation(
-                                "BrIf condition must be boolean",
-                            ))
-                        }
+                    let cond = cond.try_downcast_ref::<bool>()?;
+
+                    if *cond {
+                        return Ok(ControlFlow::Block(true_blk));
+                    } else {
+                        return Ok(ControlFlow::Block(false_blk));
                     }
                 }
+
                 Instruction::Call { func, args, result } => match func {
                     Address::Function(id) => {
                         self.call_function(ctx, id, args, result)?;
                     }
                     Address::Stack(_) => {
-                        match ctx.stack.load_value(func).borrow_mut().deref_mut() {
-                            Value::Function(id) => {
-                                self.call_function(ctx, *id, args, result)?;
-                            }
-                            callable => {
-                                let args: Vec<ValueRef> =
-                                    args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
+                        let callable = ctx.stack.load_value(func);
+                        let mut callable = callable.borrow_mut();
+                        let callable = callable.deref_mut();
 
-                                ctx.stack.alloc_frame();
+                        if let Some(UserFunction(id)) = callable.downcast_mut::<UserFunction>() {
+                            self.call_function(ctx, *id, args, result)?;
+                        } else if let Some(callable) = callable.downcast_mut::<NativeFunction>() {
+                            let args: Vec<ValueRef> =
+                                args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
 
-                                let ret = callable.call(&args)?;
+                            ctx.stack.alloc_frame();
 
-                                ctx.stack.exit_frame();
-                                if let Some(ret) = ret {
-                                    ctx.stack.store_value(result, ValueRef::new(ret));
-                                }
+                            let ret = callable.call(&args)?;
+
+                            ctx.stack.exit_frame();
+                            if let Some(ret) = ret {
+                                ctx.stack.store_value(result, ValueRef::new(ret));
                             }
                         }
                     }
                 },
-                Instruction::Return { value } => {
-                    let value = value.map(|v| ctx.stack.load_value(v));
-                    return Ok(ControlFlow::Return(value));
-                }
 
                 Instruction::PropertyCall {
                     object,
@@ -412,60 +442,22 @@ impl Evaluator {
 
                     let mut obj = object.borrow_mut();
 
-                    match obj.deref_mut() {
-                        Value::Object(object) => {
-                            let args: Vec<ValueRef> =
-                                args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
+                    let args: Vec<ValueRef> =
+                        args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
 
-                            ctx.stack.alloc_frame();
+                    ctx.stack.alloc_frame();
 
-                            let ret = object.property_call(&property, &args)?;
+                    let ret = obj.property_call(&property, &args)?;
 
-                            ctx.stack.exit_frame();
-                            if let Some(ret) = ret {
-                                ctx.stack.store_value(result, ValueRef::new(ret));
-                            }
-                        }
-                        Value::Array(arr) => match property.as_str() {
-                            "push" => {
-                                let element = ctx.stack.load_value(args[0]);
-                                arr.push(element);
-                            }
-                            "len" => {
-                                ctx.stack.store_value(
-                                    result,
-                                    ValueRef::new(Value::Integer(arr.len() as i64)),
-                                );
-                            }
-                            "enumerate" => {
-                                let arr: Vec<ValueRef> = arr
-                                    .clone()
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(i, ele)| {
-                                        Value::Tuple(vec![Value::Integer(i as i64).into(), ele])
-                                            .into()
-                                    })
-                                    .collect();
-                                ctx.stack.store_value(
-                                    result,
-                                    ValueRef::new(Value::Array(Vec::from(arr))),
-                                );
-                            }
-                            _ => {
-                                return Err(RuntimeError::invalid_operation(
-                                    "array property call: not implemented",
-                                ))
-                            }
-                        },
-                        _ => {
-                            return Err(RuntimeError::invalid_operation(
-                                "property call: not implemented",
-                            ))
-                        }
+                    ctx.stack.exit_frame();
+                    if let Some(ret) = ret {
+                        ctx.stack.store_value(result, ValueRef::new(ret));
                     }
                 }
-
+                Instruction::Return { value } => {
+                    let value = value.map(|v| ctx.stack.load_value(v));
+                    return Ok(ControlFlow::Return(value));
+                }
                 _ => unimplemented!("unimplemented: {inst:?}"),
             }
         }
@@ -483,7 +475,10 @@ impl Evaluator {
         let func = ctx
             .module
             .get_function(id)
-            .ok_or(RuntimeError::invalid_operation("Function not found"))?;
+            .ok_or(RuntimeError::invalid_operation(
+                crate::object::OperateKind::Call,
+                "Function not found",
+            ))?;
 
         let args: Vec<ValueRef> = args.iter().map(|arg| ctx.stack.load_value(*arg)).collect();
 
@@ -506,7 +501,7 @@ impl Evaluator {
     fn eval_call(
         &mut self,
         ctx: &mut Context,
-        func: &Function,
+        func: &crate::ir::builder::Function,
     ) -> Result<Option<ValueRef>, RuntimeError> {
         let mut next_block = func.get_entry_block();
 
@@ -539,7 +534,7 @@ mod tests {
     fn fib(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         let n = args[0].borrow();
 
-        let n: i64 = n.deref().try_into()?;
+        let n = *n.deref().try_downcast_ref::<i64>()?;
 
         if n < 1 {
             return Ok(Some(0.into()));
@@ -551,7 +546,10 @@ mod tests {
         let a = fib(&[ValueRef::new((n - 1).into())])?.unwrap();
         let b = fib(&[ValueRef::new((n - 2).into())])?.unwrap();
 
-        Ok(Some(a + b))
+        let a = a.try_downcast_ref::<i64>()?;
+        let b = b.try_downcast_ref::<i64>()?;
+
+        Ok(Some(Value::new(a + b)))
     }
 
     fn println(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
@@ -564,6 +562,26 @@ mod tests {
         println!("{}", s);
 
         Ok(None)
+    }
+
+    #[test]
+    fn test_simple() {
+        init();
+
+        let env = Environment::new();
+        let mut eval = Evaluator::new();
+
+        let script = r#"
+        let sum = 0;
+        sum = 1 + 2 + 3 + 4 + 5;
+        return sum;
+        "#;
+
+        let retval = eval.eval(script, &env).unwrap().unwrap();
+
+        println!("ret: {:?}", retval);
+
+        assert_eq!(retval, 15);
     }
 
     #[test]
@@ -581,12 +599,12 @@ mod tests {
 
         let retval = eval.eval(script, &env).unwrap().unwrap();
 
-        assert_eq!(retval, Value::Integer(55));
+        assert_eq!(retval, 55);
     }
 
     #[test]
     fn test_eval_for() {
-        // init();
+        init();
 
         let mut env = Environment::new();
         let mut eval = Evaluator::new();
@@ -616,6 +634,8 @@ mod tests {
 
     #[test]
     fn test_eval_array() {
+        // init();
+
         let mut env = Environment::new();
         let mut eval = Evaluator::new();
 
@@ -641,7 +661,7 @@ mod tests {
 
         let retval = eval.eval(script, &env).unwrap().unwrap();
 
-        assert_eq!(retval, Value::Integer(15));
+        assert_eq!(retval, 15);
     }
 
     #[test]
@@ -661,7 +681,7 @@ mod tests {
 
         let retval = eval.eval(script, &env).unwrap().unwrap();
 
-        assert_eq!(retval, Value::Integer(16));
+        assert_eq!(retval, 16);
     }
 
     #[test]
@@ -686,7 +706,7 @@ mod tests {
 
     #[test]
     fn test_eval() {
-        init();
+        // init();
 
         let mut env = Environment::new();
         let mut eval = Evaluator::new();
@@ -709,15 +729,17 @@ mod tests {
 
         let sum = 0;
         for i in 1..=10 {
-            sum += fib(i);
+            sum += f(i);
         }
         
-        println("-->", sum);
+        println("-->", sum, !true);
         return sum;
         "#;
 
         let retval = eval.eval(script, &env).unwrap();
 
         println!("ret: {:?}", retval);
+
+        assert_eq!(retval.unwrap(), 143);
     }
 }

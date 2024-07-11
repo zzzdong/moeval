@@ -251,7 +251,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
 
         let context = {
             let mut context = self.builder.module.make_context();
-            let mut builder = Builder::new(&mut context, &mut self.builder.module);
+            let mut builder = Builder::new(&mut context, self.builder.module);
 
             let mut compiler = FunctionCompiler::new(&mut builder, symbols);
 
@@ -280,7 +280,9 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
-            Expression::Binary(BinOp::Range, lhs, rhs) => self.compile_range(*lhs, *rhs),
+            Expression::Prefix(op, expr) => self.compile_unary(op, *expr),
+            Expression::Binary(BinOp::Range, lhs, rhs) => self.compile_range(*lhs, *rhs, false),
+            Expression::Binary(BinOp::RangeTo, lhs, rhs) => self.compile_range(*lhs, *rhs, true),
             Expression::Binary(op, lhs, rhs) => self.compile_binary(op, *lhs, *rhs),
             Expression::Member(member) => self.compile_get_property(member),
             Expression::Call(call) => self.compile_call(call),
@@ -370,7 +372,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
                     Some(BinOp::Mul) => self.builder.binop(Opcode::Mul, object, value),
                     Some(BinOp::Div) => self.builder.binop(Opcode::Div, object, value),
                     Some(BinOp::Mod) => self.builder.binop(Opcode::Mod, object, value),
-                    None => object,
+                    None => value,
                     _ => unreachable!(),
                 };
 
@@ -442,6 +444,15 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
+    fn compile_unary(&mut self, op: PrefixOp, expr: Expression) -> Address {
+        let rhs = self.compile_expression(expr);
+
+        match op {
+            PrefixOp::Not => self.builder.unaryop(Opcode::Not, rhs),
+            PrefixOp::Neg => self.builder.unaryop(Opcode::Neg, rhs),
+        }
+    }
+
     fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> Address {
         let lhs = self.compile_expression(lhs);
         let rhs = self.compile_expression(rhs);
@@ -467,10 +478,10 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_range(&mut self, lhs: Expression, rhs: Expression) -> Address {
+    fn compile_range(&mut self, lhs: Expression, rhs: Expression, bounded: bool) -> Address {
         let begin = self.compile_expression(lhs);
         let end = self.compile_expression(rhs);
-        self.builder.range(begin, end)
+        self.builder.range(begin, end, bounded)
     }
 }
 

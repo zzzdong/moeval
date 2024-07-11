@@ -1,7 +1,5 @@
 use crate::{codegen::Codegen, error::CompileError, ir::builder::Module};
 
-
-
 pub struct Compiler {}
 
 impl Compiler {
@@ -25,7 +23,7 @@ mod test {
 
     #[test]
     fn test_compiler() {
-        let inputs = vec![
+        let inputs = [
             "1 + 2 * 3 - 4 - a * b / c == 0;",
             "a.b.c.d(1, 1) + b(c, d);",
             "a.c = b.c(1,1);",

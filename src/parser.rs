@@ -66,7 +66,8 @@ fn pratt_parser() -> &'static PrattParser<Rule> {
                 | Op::infix(Rule::mul_assign_operator, Assoc::Right)
                 | Op::infix(Rule::div_assign_operator, Assoc::Right)
                 | Op::infix(Rule::mod_assign_operator, Assoc::Right))
-            .op(Op::infix(Rule::range_operator, Assoc::Left))
+            .op(Op::infix(Rule::range_to_operator, Assoc::Left)
+                | Op::infix(Rule::range_operator, Assoc::Left))
             .op(Op::infix(Rule::or_operator, Assoc::Left))
             .op(Op::infix(Rule::and_operator, Assoc::Left))
             .op(Op::infix(Rule::equal_operator, Assoc::Left)
@@ -641,8 +642,7 @@ fn parse_map_item(pair: Pair<Rule>) -> Result<(Expression, Expression)> {
 fn parse_map(pair: Pair<Rule>) -> Result<MapExpression> {
     let pairs = pair.into_inner();
 
-    let elements: Result<Vec<(Expression, Expression)>> =
-        pairs.map(parse_map_item).collect();
+    let elements: Result<Vec<(Expression, Expression)>> = pairs.map(parse_map_item).collect();
 
     Ok(MapExpression(elements?))
 }
@@ -675,7 +675,7 @@ for (i, ele) in arr.enumerate() {
 }
 "#;
 
-        let mut pairs = PestParser::parse(Rule::program, input);
+        let pairs = PestParser::parse(Rule::program, input);
         println!("ret: {pairs:?}");
 
         let mut pairs = pairs.unwrap();

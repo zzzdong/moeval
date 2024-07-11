@@ -148,17 +148,11 @@ pub enum Expression {
 
 impl Expression {
     pub(crate) fn is_literal(&self) -> bool {
-        match self {
-            Expression::Literal(_) => true,
-            _ => false,
-        }
+        matches!(self, Expression::Literal(_))
     }
 
     pub(crate) fn is_identifier(&self) -> bool {
-        match self {
-            Expression::Identifier(_) => true,
-            _ => false,
-        }
+        matches!(self, Expression::Identifier(_))
     }
 
     pub(crate) fn as_literal(&self) -> Option<LiteralExpression> {
@@ -232,6 +226,7 @@ pub enum BinOp {
     NotEqual,
     As,
     Range,
+    RangeTo,
     Path,
     Assign,
     AddAssign,
@@ -258,7 +253,8 @@ impl fmt::Display for BinOp {
             BinOp::Equal => write!(f, "=="),
             BinOp::NotEqual => write!(f, "!="),
             BinOp::As => write!(f, "as"),
-            BinOp::Range => write!(f, "..="),
+            BinOp::Range => write!(f, ".."),
+            BinOp::RangeTo => write!(f, "..="),
             BinOp::Path => write!(f, "::"),
             BinOp::Assign => write!(f, "="),
             BinOp::AddAssign => write!(f, "+="),
@@ -289,7 +285,8 @@ impl FromStr for BinOp {
             "==" => Ok(BinOp::Equal),
             "!=" => Ok(BinOp::NotEqual),
             "as" => Ok(BinOp::As),
-            "..=" => Ok(BinOp::Range),
+            ".." => Ok(BinOp::Range),
+            "..=" => Ok(BinOp::RangeTo),
             "=" => Ok(BinOp::Assign),
             "+=" => Ok(BinOp::AddAssign),
             "-=" => Ok(BinOp::SubAssign),

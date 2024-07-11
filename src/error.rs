@@ -50,8 +50,34 @@ impl std::error::Error for CompileError {}
 
 #[derive(Debug)]
 pub enum RuntimeError {
-    InvalidOperation { kind: OperateKind, message: String },
-    InvalidType { expected: &'static str, got: String },
+    InvalidOperation {
+        kind: OperateKind,
+        message: String,
+    },
+    InvalidType {
+        expected: &'static str,
+        got: String,
+    },
+    InvalidArgumentCount {
+        expected: usize,
+        got: usize,
+    },
+    InvalidArgument {
+        index: usize,
+        expected: &'static str,
+        cause: String,
+    },
+    SymbolNotFound {
+        name: String,
+    },
+    Overflow,
+    IndexOutOfBounds {
+        index: usize,
+        length: usize,
+    },
+    KeyNotFound {
+        key: String,
+    },
 }
 
 impl RuntimeError {
@@ -68,6 +94,34 @@ impl RuntimeError {
             got: format!("{:?}", got),
         }
     }
+
+    pub fn invalid_argument_count(expected: usize, got: usize) -> Self {
+        RuntimeError::InvalidArgumentCount { expected, got }
+    }
+
+    pub fn invalid_argument<T: std::any::Any>(index: usize, got: impl std::fmt::Debug) -> Self {
+        RuntimeError::InvalidArgument {
+            index,
+            expected: std::any::type_name::<T>(),
+            cause: format!("{:?}", got),
+        }
+    }
+
+    pub fn symbol_not_found(name: impl ToString) -> Self {
+        RuntimeError::SymbolNotFound {
+            name: name.to_string(),
+        }
+    }
+
+    pub fn index_out_of_bound(index: usize, length: usize) -> Self {
+        RuntimeError::IndexOutOfBounds { index, length }
+    }
+
+    pub fn key_not_found(key: impl std::fmt::Debug) -> Self {
+        RuntimeError::KeyNotFound {
+            key: format!("{key:?}"),
+        }
+    }
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -77,8 +131,44 @@ impl std::fmt::Display for RuntimeError {
                 write!(f, "Invalid `{}` operation: {}", kind, message)
             }
             RuntimeError::InvalidType { expected, got } => {
-                write!(f, "Invalid type: expected type `{}`, got `{}`", expected, got)
+                write!(
+                    f,
+                    "Invalid type: expected type `{}`, got `{}`",
+                    expected, got
+                )
             }
+            RuntimeError::InvalidArgumentCount { expected, got } => {
+                write!(
+                    f,
+                    "Invalid argument count: expected `{}`, got `{}`",
+                    expected, got
+                )
+            }
+            RuntimeError::InvalidArgument {
+                index,
+                expected,
+                cause,
+            } => {
+                write!(
+                    f,
+                    "Invalid argument[{}] type: expected type `{}`, cause `{}`",
+                    index, expected, cause
+                )
+            }
+            RuntimeError::SymbolNotFound { name } => {
+                write!(f, "Symbol `{}` not found", name)
+            }
+            RuntimeError::IndexOutOfBounds { index, length } => {
+                write!(
+                    f,
+                    "Index out of bounds: index `{}`, length `{}`",
+                    index, length
+                )
+            }
+            RuntimeError::KeyNotFound { key } => {
+                write!(f, "Key `{}` not found", key)
+            }
+            RuntimeError::Overflow => write!(f, "Overflow"),
         }
     }
 }

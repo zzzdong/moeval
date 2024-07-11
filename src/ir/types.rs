@@ -3,14 +3,14 @@ use std::hash::Hash;
 
 #[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
 pub enum Primitive {
+    #[default]
+    Undefined,
     Boolean(bool),
     Byte(u8),
     Integer(i64),
     Float(f64),
     Char(char),
     String(String),
-    #[default]
-    Undefined,
 }
 
 impl fmt::Display for Primitive {
@@ -22,26 +22,14 @@ impl fmt::Display for Primitive {
             Primitive::Float(ff) => write!(f, "{}", ff),
             Primitive::Char(c) => write!(f, "{}", c),
             Primitive::String(s) => write!(f, "{}", s),
-            Primitive::Undefined => write!(f, "undefined"),
+            Primitive::Undefined => write!(f, "Undefined"),
         }
     }
 }
 
-impl Eq for Primitive {
-    fn assert_receiver_is_total_eq(&self) {
-        match self {
-            Primitive::Boolean(b) => b.assert_receiver_is_total_eq(),
-            Primitive::Byte(b) => b.assert_receiver_is_total_eq(),
-            Primitive::Integer(i) => i.assert_receiver_is_total_eq(),
-            Primitive::Float(f) => f.to_bits().assert_receiver_is_total_eq(),
-            Primitive::Char(c) => c.assert_receiver_is_total_eq(),
-            Primitive::String(s) => s.assert_receiver_is_total_eq(),
-            Primitive::Undefined => (),
-        }
-    }
-}
+impl Eq for Primitive {}
 
-impl Hash for Primitive {
+impl std::hash::Hash for Primitive {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             Primitive::Boolean(b) => b.hash(state),
@@ -71,6 +59,12 @@ macro_rules! id_entity {
 
             pub fn as_usize(&self) -> usize {
                 self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}<{}>", std::any::type_name::<$name>(), self.0)
             }
         }
     };
