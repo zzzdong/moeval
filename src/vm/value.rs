@@ -6,7 +6,9 @@ use std::{
     rc::Rc,
 };
 
-use crate::{error::RuntimeError, ir::types::Primitive, object::Object, types::*};
+use super::object::{Object, Undefined};
+use super::RuntimeError;
+use crate::ir::Primitive;
 
 #[derive(Debug)]
 pub struct Value(Box<dyn Object>);

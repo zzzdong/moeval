@@ -1,17 +1,213 @@
-use std::iter::Iterator;
+use std::any::type_name;
+use std::fmt;
 use std::marker::PhantomData;
-use std::{any::type_name, fmt};
 
 use indexmap::IndexMap;
 
-use crate::ir::types::Primitive;
-use crate::{
-    error::RuntimeError,
-    ir::FunctionId,
-    object::{Object, OperateKind},
-    value::{Value, ValueRef},
-};
+use crate::ir::{FunctionId, Opcode, Primitive};
 
+use super::value::{Value, ValueRef};
+use super::RuntimeError;
+
+#[derive(Debug, Clone, Copy)]
+pub enum OperateKind {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+    Power,
+    Compare,
+    LogicAnd,
+    LogicOr,
+    Negate,
+    Call,
+    IndexGet,
+    IndexSet,
+    PropertyGet,
+    PropertySet,
+    PropertyCall,
+    MakeIterator,
+    IterateNext,
+    Display,
+    TypeCast,
+}
+
+impl fmt::Display for OperateKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OperateKind::Add => write!(f, "add"),
+            OperateKind::Subtract => write!(f, "subtract"),
+            OperateKind::Multiply => write!(f, "multiply"),
+            OperateKind::Divide => write!(f, "divide"),
+            OperateKind::Modulo => write!(f, "modulo"),
+            OperateKind::Power => write!(f, "power"),
+            OperateKind::Compare => write!(f, "compare"),
+            OperateKind::LogicAnd => write!(f, "logic_and"),
+            OperateKind::LogicOr => write!(f, "logic_or"),
+            OperateKind::Negate => write!(f, "negate"),
+            OperateKind::Call => write!(f, "call"),
+            OperateKind::IndexGet => write!(f, "index_get"),
+            OperateKind::IndexSet => write!(f, "index_set"),
+            OperateKind::PropertyGet => write!(f, "property_get"),
+            OperateKind::PropertySet => write!(f, "property_set"),
+            OperateKind::PropertyCall => write!(f, "property_call"),
+            OperateKind::MakeIterator => write!(f, "make_iterator"),
+            OperateKind::IterateNext => write!(f, "iterate_next"),
+            OperateKind::Display => write!(f, "display"),
+            OperateKind::TypeCast => write!(f, "type_cast"),
+        }
+    }
+}
+
+pub trait Object: std::any::Any + std::fmt::Debug {
+    fn display(&self) -> String {
+        format!("{:?}", self)
+    }
+
+    /// arithmetic addition operation
+    fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Add,
+            "unimplemented",
+        ))
+    }
+
+    /// arithmetic subtraction operation
+    fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Subtract,
+            "unimplemented",
+        ))
+    }
+
+    /// arithmetic multiplication operation
+    fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Multiply,
+            "unimplemented",
+        ))
+    }
+
+    /// arithmetic division operation
+    fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Divide,
+            "unimplemented",
+        ))
+    }
+
+    /// arithmetic modulo operation
+    fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Modulo,
+            "unimplemented",
+        ))
+    }
+
+    /// arithmetic power operation
+    fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Power,
+            "unimplemented",
+        ))
+    }
+
+    /// compare operation
+    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Compare,
+            "unimplemented",
+        ))
+    }
+
+    /// logic and operation
+    fn logic_and(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::LogicAnd,
+            "unimplemented",
+        ))
+    }
+
+    /// logic or operation
+    fn logic_or(&self, other: &Value) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::LogicOr,
+            "unimplemented",
+        ))
+    }
+
+    /// negate operation
+    fn negate(&self) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Negate,
+            "unimplemented",
+        ))
+    }
+
+    fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Call,
+            "unimplemented",
+        ))
+    }
+
+    /// index get operation
+    fn index_get(&self, index: &Value) -> Result<ValueRef, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::IndexGet,
+            "unimplemented",
+        ))
+    }
+
+    fn index_set(&mut self, index: &Value, value: ValueRef) -> Result<(), RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::IndexSet,
+            "unimplemented",
+        ))
+    }
+
+    fn property_get(&mut self, member: &str) -> Result<Value, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::PropertyGet,
+            "unimplemented",
+        ))
+    }
+
+    fn property_set(&mut self, member: &str, value: ValueRef) -> Result<(), RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::PropertySet,
+            "unimplemented",
+        ))
+    }
+
+    fn property_call(
+        &mut self,
+        member: &str,
+        args: &[ValueRef],
+    ) -> Result<Option<Value>, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::PropertyCall,
+            "unimplemented",
+        ))
+    }
+
+    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::MakeIterator,
+            "unimplemented",
+        ))
+    }
+
+    fn iterate_next(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::IterateNext,
+            "unimplemented",
+        ))
+    }
+}
+
+/// Undefined
 #[derive(Debug, PartialEq, PartialOrd)]
 pub struct Undefined;
 
@@ -24,6 +220,7 @@ impl Object for Undefined {
     }
 }
 
+/// Boolean
 impl Object for bool {
     fn negate(&self) -> Result<Value, RuntimeError> {
         Ok(Value::new(!self))
@@ -40,31 +237,7 @@ impl Object for bool {
     }
 }
 
-// #[derive(Debug)]
-// pub struct Boolean(bool);
-
-// impl Boolean {
-//     pub fn new(value: bool) -> Self {
-//         Boolean(value)
-//     }
-
-//     pub fn value(&self) -> bool {
-//         self.0
-//     }
-// }
-
-// impl Object for Boolean {
-//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-//         let other = other.try_downcast_ref::<Boolean>()?;
-//         match (self.0, other.0) {
-//             (true, true) => Ok(std::cmp::Ordering::Equal),
-//             (true, false) => Ok(std::cmp::Ordering::Greater),
-//             (false, true) => Ok(std::cmp::Ordering::Less),
-//             (false, false) => Ok(std::cmp::Ordering::Equal),
-//         }
-//     }
-// }
-
+/// Integer
 impl Object for i64 {
     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
         let other = other.try_downcast_ref::<i64>()?;
@@ -181,129 +354,7 @@ impl Object for i64 {
     }
 }
 
-// #[derive(Debug)]
-// pub struct Integer(i64);
-
-// impl Integer {
-//     pub fn new(value: i64) -> Self {
-//         Integer(value)
-//     }
-
-//     pub fn value(&self) -> i64 {
-//         self.0
-//     }
-// }
-
-// impl Object for Integer {
-//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         match self.0.checked_add(other.0) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         match self.0.checked_sub(other.0) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         match self.0.checked_mul(other.0) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn modulo(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         match self.0.checked_rem(other.0) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         match self.0.checked_div(other.0) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn pow(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-//         if other.0 >= u32::MAX as i64 {
-//             return Err(RuntimeError::invalid_operation(
-//                 OperateKind::Power,
-//                 "exp >= u32::MAX",
-//             ));
-//         }
-//         match self.0.checked_pow(other.0 as u32) {
-//             Some(result) => Ok(Value::new(result)),
-//             None => Err(RuntimeError::Overflow),
-//         }
-//     }
-
-//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-//         let other = other.try_downcast_ref::<Integer>()?;
-
-//         self.0
-//             .partial_cmp(&other.0)
-//             .ok_or(RuntimeError::invalid_operation(
-//                 OperateKind::Compare,
-//                 "uncomparable",
-//             ))
-//     }
-
-//     fn property_get(&mut self, member: &str) -> Result<Value, RuntimeError> {
-//         match member {
-//             "max" => Ok(Value::new(Integer(i64::MAX))),
-//             "min" => Ok(Value::new(Integer(i64::MIN))),
-//             _ => Err(RuntimeError::InvalidOperation {
-//                 kind: OperateKind::PropertyGet,
-//                 message: format!("{} is not a member of Integer", member),
-//             }),
-//         }
-//     }
-
-//     fn property_call(
-//         &mut self,
-//         member: &str,
-//         args: &[ValueRef],
-//     ) -> Result<Option<Value>, RuntimeError> {
-//         match member {
-//             "abs" => {
-//                 if args.len() != 0 {
-//                     Err(RuntimeError::InvalidOperation {
-//                         kind: OperateKind::PropertyCall,
-//                         message: format!("{} takes no arguments", member),
-//                     })
-//                 } else {
-//                     Ok(Some(Value::new(Integer(self.0.abs()))))
-//                 }
-//             }
-//             "to_string" => {
-//                 if args.len() != 0 {
-//                     return Err(RuntimeError::invalid_operation(
-//                         OperateKind::PropertyCall,
-//                         format!("{} takes no arguments", member),
-//                     ));
-//                 }
-//                 Ok(Some(Value::new(self.0.to_string())))
-//             }
-//             _ => Err(RuntimeError::invalid_operation(
-//                 OperateKind::PropertyCall,
-//                 format!("{} is not a callable property", member),
-//             )),
-//         }
-//     }
-// }
-
+/// Float
 impl Object for f64 {
     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
         if let Some(other) = other.downcast_ref::<f64>() {
@@ -387,211 +438,7 @@ impl Object for f64 {
     }
 }
 
-// #[derive(Debug)]
-// pub struct Float(f64);
-
-// impl Float {
-//     pub fn new(value: f64) -> Self {
-//         Float(value)
-//     }
-
-//     pub fn value(&self) -> f64 {
-//         self.0
-//     }
-// }
-
-// impl Object for Float {
-//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         if let Some(other) = other.downcast_ref::<Float>() {
-//             return Ok(Value::new(Float(self.0 + other.0)));
-//         } else if let Some(other) = other.downcast_ref::<Integer>() {
-//             return Ok(Value::new(Float(self.0 + other.0 as f64)));
-//         }
-
-//         Err(RuntimeError::invalid_type::<Float>(other))
-//     }
-
-//     fn sub(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         if let Some(other) = other.downcast_ref::<Float>() {
-//             return Ok(Value::new(Float(self.0 - other.0)));
-//         } else if let Some(other) = other.downcast_ref::<Integer>() {
-//             return Ok(Value::new(Float(self.0 - other.0 as f64)));
-//         }
-
-//         Err(RuntimeError::invalid_type::<Float>(other))
-//     }
-
-//     fn mul(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         if let Some(other) = other.downcast_ref::<Float>() {
-//             return Ok(Value::new(Float(self.0 * other.0)));
-//         } else if let Some(other) = other.downcast_ref::<Integer>() {
-//             return Ok(Value::new(Float(self.0 * other.0 as f64)));
-//         }
-
-//         Err(RuntimeError::invalid_type::<Float>(other))
-//     }
-
-//     fn div(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         if let Some(other) = other.downcast_ref::<Float>() {
-//             return Ok(Value::new(Float(self.0 / other.0)));
-//         } else if let Some(other) = other.downcast_ref::<Integer>() {
-//             return Ok(Value::new(Float(self.0 / other.0 as f64)));
-//         }
-
-//         Err(RuntimeError::invalid_type::<Float>(other))
-//     }
-
-//     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-//         if let Some(other) = other.downcast_ref::<Float>() {
-//             self.0
-//                 .partial_cmp(&other.0)
-//                 .ok_or(RuntimeError::invalid_operation(
-//                     OperateKind::Compare,
-//                     "uncomparable",
-//                 ))
-//         } else if let Some(other) = other.downcast_ref::<Integer>() {
-//             self.0
-//                 .partial_cmp(&(other.0 as f64))
-//                 .ok_or(RuntimeError::invalid_operation(
-//                     OperateKind::Compare,
-//                     "uncomparable",
-//                 ))
-//         } else {
-//             Err(RuntimeError::invalid_type::<Float>(self))
-//         }
-//     }
-
-//     fn property_call(
-//         &mut self,
-//         member: &str,
-//         args: &[ValueRef],
-//     ) -> Result<Option<Value>, RuntimeError> {
-//         match member {
-//             "to_string" => {
-//                 if !args.is_empty() {
-//                     return Err(RuntimeError::invalid_argument_count(0, args.len()));
-//                 }
-//                 Ok(Some(Value::new(self.0.to_string())))
-//             }
-//             _ => Err(RuntimeError::invalid_operation(
-//                 OperateKind::PropertyCall,
-//                 format!("{} is not a callable property", member),
-//             )),
-//         }
-//     }
-// }
-
-// #[derive(Debug)]
-// pub struct EString(String);
-
-// impl EString {
-//     pub fn new(s: impl Into<String>) -> Self {
-//         EString(s.into())
-//     }
-
-//     pub fn value(&self) -> &str {
-//         &self.0
-//     }
-// }
-
-// impl Object for EString {
-//     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
-//         let other = other.try_downcast_ref::<EString>()?;
-
-//         Ok(Value::new(EString(self.0.clone() + &other.0)))
-//     }
-
-//     fn property_call(
-//         &mut self,
-//         member: &str,
-//         args: &[ValueRef],
-//     ) -> Result<Option<Value>, RuntimeError> {
-//         match member {
-//             "to_string" => {
-//                 if args.len() != 0 {
-//                     return Err(RuntimeError::invalid_argument_count(0, args.len()));
-//                 }
-
-//                 Ok(Some(Value::new(EString(self.0.clone()))))
-//             }
-//             "len" => {
-//                 if args.len() != 0 {
-//                     return Err(RuntimeError::invalid_argument_count(0, args.len()));
-//                 }
-
-//                 Ok(Some(Value::new(Integer(self.0.chars().count() as i64))))
-//             }
-
-//             "split" => {
-//                 if args.len() != 1 {
-//                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
-//                 }
-
-//                 let pat = args.get(0).unwrap().borrow();
-
-//                 let pat = pat.try_downcast_ref::<EString>()?;
-
-//                 if pat.0.is_empty() {
-//                     return Err(RuntimeError::invalid_argument::<EString>(
-//                         0,
-//                         "pat must not empty",
-//                     ));
-//                 }
-
-//                 let parts: Vec<ValueRef> = self
-//                     .0
-//                     .split(&pat.0)
-//                     .map(|s| ValueRef::new(Value::new(EString::new(s))))
-//                     .collect();
-
-//                 Ok(Some(Value::new(Array::new(parts))))
-//             }
-//             "find" => {
-//                 if args.len() != 1 {
-//                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
-//                 }
-//                 let pat = args.get(0).unwrap().borrow();
-
-//                 let pat = pat.try_downcast_ref::<EString>()?;
-
-//                 match self.0.find(&pat.0) {
-//                     Some(index) => {
-//                         let sub = &self.0.as_str()[0..index];
-
-//                         Ok(Some(Value::new(Integer(sub.chars().count() as i64))))
-//                     }
-//                     None => Ok(Some(Value::new(Integer(-1)))),
-//                 }
-//             }
-
-//             "starts_with" => {
-//                 if args.len() != 1 {
-//                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
-//                 }
-//                 let pat = args.get(0).unwrap().borrow();
-
-//                 let pat = pat.try_downcast_ref::<EString>()?;
-
-//                 Ok(Some(Value::new(Boolean::new(self.0.starts_with(&pat.0)))))
-//             }
-//             "ends_with" => {
-//                 if args.len() != 1 {
-//                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
-//                 }
-//                 let pat = args.get(0).unwrap().borrow();
-
-//                 let pat = pat.try_downcast_ref::<EString>()?;
-
-//                 Ok(Some(Value::new(Boolean::new(self.0.ends_with(&pat.0)))))
-//             }
-//             _ => Err(RuntimeError::invalid_operation(
-//                 OperateKind::PropertyCall,
-//                 format!("{} is not a callable property", member),
-//             )),
-//         }
-//     }
-// }
-
+/// String
 impl Object for String {
     fn display(&self) -> String {
         self.to_string()
@@ -691,16 +538,86 @@ impl Object for String {
             )),
         }
     }
+
+    fn index_get(&self, index: &Value) -> Result<ValueRef, RuntimeError> {
+        if let Some(index) = index.downcast_ref::<i64>().copied() {
+            let char_count: i64 = self.chars().count() as i64;
+
+            if index < 0 && index >= char_count {
+                return Err(RuntimeError::index_out_of_bound(index, char_count));
+            }
+            return Ok(ValueRef::new(Value::new(
+                self.chars().nth(index as usize).unwrap().to_string(),
+            )));
+        } else if let Some(index) = index.downcast_ref::<SliceIndex>() {
+            let char_count: i64 = self.chars().count() as i64;
+            let chars = self.chars();
+
+            match *index {
+                SliceIndex::Range { begin, end } => {
+                    if begin < 0 || begin > char_count - 1 || begin >= end || end > char_count {
+                        return Err(RuntimeError::index_out_of_bound(end, char_count));
+                    }
+                    let chars = chars.skip(begin as usize).take((end - begin) as usize);
+                    return Ok(ValueRef::new(Value::new(String::from_iter(chars))));
+                }
+                SliceIndex::RangeInclusive { begin, end } => {
+                    if begin < 0 || begin > char_count - 1 || begin >= end || end > char_count - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, char_count));
+                    }
+
+                    let chars = chars.skip(begin as usize).take((end - begin + 1) as usize);
+                    return Ok(ValueRef::new(Value::new(String::from_iter(chars))));
+                }
+                SliceIndex::RangeFull => return Ok(ValueRef::new(Value::new(self.clone()))),
+                SliceIndex::RangeFrom { begin } => {
+                    if begin < 0 || begin > char_count - 1 {
+                        return Err(RuntimeError::index_out_of_bound(begin, char_count));
+                    }
+                    let chars = chars.skip(begin as usize);
+                    return Ok(ValueRef::new(Value::new(String::from_iter(chars))));
+                }
+                SliceIndex::RangeTo { end } => {
+                    if end < 1 || end > char_count {
+                        return Err(RuntimeError::index_out_of_bound(end, char_count));
+                    }
+                    let chars = chars.take(end as usize);
+                    return Ok(ValueRef::new(Value::new(String::from_iter(chars))));
+                }
+                SliceIndex::RangeToInclusive { end } => {
+                    if end < 1 || end > char_count - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, char_count));
+                    }
+                    let chars = chars.take(end as usize + 1);
+                    return Ok(ValueRef::new(Value::new(String::from_iter(chars))));
+                }
+            }
+        }
+
+        Err(RuntimeError::invalid_type::<i64>(index))
+    }
+
+    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+        let chars = self.chars().collect::<Vec<char>>();
+        Ok(Box::new(
+            chars
+                .into_iter()
+                .map(|c| ValueRef::new(Value::new(c.to_string()))),
+        ))
+    }
 }
 
-impl<T: Object> Object for Vec<T> {}
-
-#[derive(Debug)]
+/// Tuple
+#[derive(Debug, Clone)]
 pub struct Tuple(Vec<ValueRef>);
 
 impl Tuple {
     pub fn new(values: Vec<ValueRef>) -> Self {
         Tuple(values)
+    }
+
+    fn len(&self) -> i64 {
+        self.0.len() as i64
     }
 }
 
@@ -713,7 +630,7 @@ impl Object for Tuple {
         match member {
             "len" => {
                 if args.is_empty() {
-                    return Ok(Some(Value::new(self.0.len() as f64)));
+                    return Ok(Some(Value::new(self.len())));
                 }
                 Err(RuntimeError::invalid_argument_count(0, args.len()))
             }
@@ -728,16 +645,63 @@ impl Object for Tuple {
     }
 
     fn index_get(&self, index: &Value) -> Result<ValueRef, RuntimeError> {
-        let index = *index.try_downcast_ref::<i64>()? as usize;
+        if let Some(index) = index.downcast_ref::<i64>().copied() {
+            if index < 0 && index >= self.len() {
+                return Err(RuntimeError::index_out_of_bound(index, self.len()));
+            }
+            return Ok(self.0.get(index as usize).cloned().unwrap());
+        } else if let Some(index) = index.downcast_ref::<SliceIndex>() {
+            match *index {
+                SliceIndex::Range { begin, end } => {
+                    if begin < 0 || begin > self.len() - 1 || begin >= end || end > self.len() {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Tuple::new(
+                        self.0.get(begin as usize..end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeInclusive { begin, end } => {
+                    if begin < 0 || begin > self.len() - 1 || begin >= end || end > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Tuple::new(
+                        self.0.get(begin as usize..=end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeFull => return Ok(ValueRef::new(Value::new(self.clone()))),
+                SliceIndex::RangeFrom { begin } => {
+                    if begin < 0 || begin > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(begin, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Tuple::new(
+                        self.0.get(begin as usize..).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeTo { end } => {
+                    if end < 1 || end > self.len() {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Tuple::new(
+                        self.0.get(..end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeToInclusive { end } => {
+                    if end < 1 || end > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Tuple::new(
+                        self.0.get(..=end as usize).unwrap().to_vec(),
+                    ))));
+                }
+            }
+        }
 
-        self.0
-            .get(index)
-            .cloned()
-            .ok_or(RuntimeError::index_out_of_bound(index, self.0.len()))
+        Err(RuntimeError::invalid_type::<i64>(index))
     }
 }
 
-#[derive(Debug)]
+/// Array
+#[derive(Debug, Clone)]
 pub struct Array(Vec<ValueRef>);
 
 impl Array {
@@ -753,8 +717,8 @@ impl Array {
         self.0.get(index).cloned()
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub fn len(&self) -> i64 {
+        self.0.len() as i64
     }
 }
 
@@ -773,7 +737,7 @@ impl Object for Array {
             }
             "len" => {
                 if args.is_empty() {
-                    Ok(Some(Value::new(self.0.len() as f64)))
+                    Ok(Some(Value::new(self.len())))
                 } else {
                     Err(RuntimeError::invalid_argument_count(0, args.len()))
                 }
@@ -812,8 +776,64 @@ impl Object for Array {
     fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
         Ok(Box::new(self.0.clone().into_iter()))
     }
+
+    fn index_get(&self, index: &Value) -> Result<ValueRef, RuntimeError> {
+        if let Some(index) = index.downcast_ref::<i64>().copied() {
+            if index < 0 && index >= self.len() {
+                return Err(RuntimeError::index_out_of_bound(index, self.len()));
+            }
+            return Ok(self.0.get(index as usize).cloned().unwrap());
+        } else if let Some(index) = index.downcast_ref::<SliceIndex>() {
+            match *index {
+                SliceIndex::Range { begin, end } => {
+                    if begin < 0 || begin > self.len() - 1 || begin >= end || end > self.len() {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Array::new(
+                        self.0.get(begin as usize..end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeInclusive { begin, end } => {
+                    if begin < 0 || begin > self.len() - 1 || begin >= end || end > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Array::new(
+                        self.0.get(begin as usize..=end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeFull => return Ok(ValueRef::new(Value::new(self.clone()))),
+                SliceIndex::RangeFrom { begin } => {
+                    if begin < 0 || begin > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(begin, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Array::new(
+                        self.0.get(begin as usize..).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeTo { end } => {
+                    if end < 1 || end > self.len() {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Array::new(
+                        self.0.get(..end as usize).unwrap().to_vec(),
+                    ))));
+                }
+                SliceIndex::RangeToInclusive { end } => {
+                    if end < 1 || end > self.len() - 1 {
+                        return Err(RuntimeError::index_out_of_bound(end, self.len()));
+                    }
+                    return Ok(ValueRef::new(Value::new(Array::new(
+                        self.0.get(..=end as usize).unwrap().to_vec(),
+                    ))));
+                }
+            }
+        }
+
+        Err(RuntimeError::invalid_type::<i64>(index))
+    }
 }
 
+/// Map
 #[derive(Debug)]
 pub struct Map(IndexMap<Primitive, ValueRef>);
 
@@ -941,26 +961,7 @@ impl Object for Map {
     }
 }
 
-// #[derive(Debug)]
-// pub struct Function(crate::ir::builder::Function);
-
-// impl Function {
-//     pub fn new(func: crate::ir::builder::Function) -> Function {
-//         Function(func)
-//     }
-// }
-
-#[derive(Debug)]
-pub struct UserFunction(pub(crate) FunctionId);
-
-impl UserFunction {
-    pub fn new(func: FunctionId) -> UserFunction {
-        UserFunction(func)
-    }
-}
-
-impl Object for UserFunction {}
-
+/// Range
 #[derive(Debug)]
 pub struct Range {
     begin: i64,
@@ -998,6 +999,65 @@ impl Object for Range {
     }
 }
 
+/// SliceIndex
+#[derive(Debug, PartialEq, Eq)]
+pub enum SliceIndex {
+    Range { begin: i64, end: i64 },
+    RangeInclusive { begin: i64, end: i64 },
+    RangeFull,
+    RangeFrom { begin: i64 },
+    RangeTo { end: i64 },
+    RangeToInclusive { end: i64 },
+}
+
+impl SliceIndex {
+    pub fn range(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+        let begin = begin.borrow();
+        let begin = begin.try_downcast_ref::<i64>().copied()?;
+        let end = end.borrow();
+        let end = end.try_downcast_ref::<i64>().copied()?;
+
+        Ok(SliceIndex::Range { begin, end })
+    }
+
+    pub fn range_inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+        let begin = begin.borrow();
+        let begin = begin.try_downcast_ref::<i64>().copied()?;
+        let end = end.borrow();
+        let end = end.try_downcast_ref::<i64>().copied()?;
+
+        Ok(SliceIndex::RangeInclusive { begin, end })
+    }
+
+    pub fn range_full() -> Self {
+        SliceIndex::RangeFull
+    }
+
+    pub fn range_from(begin: ValueRef) -> Result<Self, RuntimeError> {
+        let begin = begin.borrow();
+        let begin = begin.try_downcast_ref::<i64>().copied()?;
+
+        Ok(SliceIndex::RangeFrom { begin })
+    }
+
+    pub fn range_to(end: ValueRef) -> Result<Self, RuntimeError> {
+        let end = end.borrow();
+        let end = end.try_downcast_ref::<i64>().copied()?;
+
+        Ok(SliceIndex::RangeTo { end })
+    }
+
+    pub fn range_to_inclusive(end: ValueRef) -> Result<Self, RuntimeError> {
+        let end = end.borrow();
+        let end = end.try_downcast_ref::<i64>().copied()?;
+
+        Ok(SliceIndex::RangeToInclusive { end })
+    }
+}
+
+impl Object for SliceIndex {}
+
+/// Enumerator
 pub struct Enumerator {
     iter: Box<dyn Iterator<Item = ValueRef>>,
 }
@@ -1020,6 +1080,19 @@ impl Object for Enumerator {
     }
 }
 
+/// UserFunction
+#[derive(Debug)]
+pub struct UserFunction(pub(crate) FunctionId);
+
+impl UserFunction {
+    pub fn new(func: FunctionId) -> UserFunction {
+        UserFunction(func)
+    }
+}
+
+impl Object for UserFunction {}
+
+/// NativeFunction
 pub struct NativeFunction {
     pub name: String,
     pub func: Box<dyn Function>,
@@ -1070,14 +1143,14 @@ pub trait IntoRet {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError>;
 }
 
-impl<T> IntoRet for T
-where
-    T: Object,
-{
-    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
-        Ok(Some(Value::from(self)))
-    }
-}
+// impl<T> IntoRet for T
+// where
+//     T: Object,
+// {
+//     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+//         Ok(Some(Value::from(self)))
+//     }
+// }
 
 impl IntoRet for Result<Option<Value>, RuntimeError> {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
@@ -1091,8 +1164,14 @@ impl IntoRet for () {
     }
 }
 
-pub trait FromValue<T = Self>: Sized {
-    fn from_value(value: &ValueRef) -> Result<T, RuntimeError>;
+impl IntoRet for i64 {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        Ok(Some(Value::from(self)))
+    }
+}
+
+pub trait FromValue: Sized {
+    fn from_value(value: &ValueRef) -> Result<Self, RuntimeError>;
 }
 
 impl FromValue for ValueRef {
@@ -1101,7 +1180,7 @@ impl FromValue for ValueRef {
     }
 }
 
-impl<T> FromValue<T> for ValueRef
+impl<T> FromValue for T
 where
     T: Object + Clone,
 {
@@ -1142,20 +1221,6 @@ where
     }
 }
 
-// impl<F, Ret, T> Callable<T> for F
-// where
-//     F: Fn(T) -> Ret + Clone + Send + 'static,
-//     Ret: IntoRet,
-//     T: FromValue
-// {
-//     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
-
-//         let arg = T::from_value(&args[0])?;
-
-//         (self)(arg).into_ret()
-//     }
-// }
-
 macro_rules! impl_callable {
     ($($idx: expr => $arg: ident),+) => {
         #[allow(non_snake_case)]
@@ -1163,11 +1228,11 @@ macro_rules! impl_callable {
         where
             F: Fn($($arg,)*) -> Ret + Clone + Send + 'static,
             Ret: IntoRet,
-            $( $arg: FromValue, )*
+            $( $arg: FromValue + 'static, )*
         {
             fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
                 $(
-                    let $arg = <$arg>::from_value(&args[$idx])?;
+                    let $arg = <$arg>::from_value(args.get($idx).ok_or(RuntimeError::invalid_argument::<$arg>($idx, "NoThing"))?)?;
                 )*
                 (self)($($arg,)*).into_ret()
             }
@@ -1229,3 +1294,91 @@ impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13,
 impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
 impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
  */
+
+pub struct Method<T> {
+    pub name: String,
+    pub func: Box<dyn MethodFunction<T>>,
+}
+
+impl<T> fmt::Debug for Method<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Method<{}.{}>", type_name::<T>(), self.name)
+    }
+}
+
+impl<T: Object> Method<T> {
+    pub fn new<Args>(name: impl ToString, method: impl MethodCallable<T, Args>) -> Self
+    where
+        Args: 'static,
+    {
+        Method {
+            name: name.to_string(),
+            func: Box::new(method.into_function()),
+        }
+    }
+}
+
+/// Function trait for external functions.
+pub trait MethodFunction<T>: Send + 'static {
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError>;
+}
+
+pub struct IntoMethodFunction<F, Args> {
+    func: F,
+    _marker: PhantomData<fn(Args) -> ()>,
+}
+
+impl<T, F, Args> MethodFunction<T> for IntoMethodFunction<F, Args>
+where
+    F: MethodCallable<T, Args> + Clone,
+    Args: 'static,
+{
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        self.func.call(this, args)
+    }
+}
+
+pub trait MethodCallable<T, Args>: Clone + Send + Sized + 'static {
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError>;
+
+    fn into_function(self) -> IntoMethodFunction<Self, Args> {
+        IntoMethodFunction {
+            func: self,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T, F, Ret> MethodCallable<T, &[ValueRef]> for F
+where
+    T: Object,
+    F: Fn(&mut T, &[ValueRef]) -> Ret + Clone + Send + 'static,
+    Ret: IntoRet,
+{
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        (self)(this, args).into_ret()
+    }
+}
+
+impl<T, F, Ret> MethodCallable<T, ()> for F
+where
+    F: Fn(&T) -> Ret + Clone + Send + 'static,
+    Ret: IntoRet,
+{
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        self(this).into_ret()
+    }
+}
+
+impl<T, F, Ret, Arg> MethodCallable<T, Arg> for F
+where
+    F: Fn(&mut T, Arg) -> Ret + Clone + Send + 'static,
+    Ret: IntoRet,
+    Arg: FromValue,
+{
+    fn call(&mut self, this: &mut T, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+        let arg = Arg::from_value(&args[0])?;
+
+        (self)(this, arg).into_ret()
+    }
+}

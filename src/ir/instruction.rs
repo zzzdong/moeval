@@ -37,6 +37,30 @@ pub enum Opcode {
     NotEqual,
     Not, // eg: !true
     Neg, // eg: -1
+    /// begin..end
+    Range {
+        begin: Address,
+        end: Address,
+    },
+    /// ..=
+    RangeInclusive {
+        begin: Address,
+        end: Address,
+    },
+    /// begin..
+    RangeFrom {
+        begin: Address,
+    },
+    /// ..
+    RangeFull,
+    /// ..end
+    RangeTo {
+        end: Address,
+    },
+    /// ..=end
+    RangeToInclusive {
+        end: Address,
+    },
 }
 
 impl fmt::Display for Opcode {
@@ -57,9 +81,16 @@ impl fmt::Display for Opcode {
             Opcode::NotEqual => write!(f, "ne"),
             Opcode::Not => write!(f, "not"),
             Opcode::Neg => write!(f, "neg"),
+            Opcode::Range { begin, end } => write!(f, "{}..{}", begin, end),
+            Opcode::RangeInclusive { begin, end } => write!(f, "{}..={}", begin, end),
+            Opcode::RangeFrom { begin } => write!(f, "{}..", begin),
+            Opcode::RangeFull => write!(f, ".."),
+            Opcode::RangeTo { end } => write!(f, "..{}", end),
+            Opcode::RangeToInclusive { end } => write!(f, "..={}", end),
         }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub enum Instruction {
@@ -160,6 +191,11 @@ pub enum Instruction {
         object: Address,
         index: Address,
         value: Address,
+    },
+    Slice {
+        dst: Address,
+        object: Address,
+        op: Opcode,
     },
 }
 
@@ -299,6 +335,9 @@ impl std::fmt::Display for Instruction {
                 value,
             } => {
                 write!(f, "index_set {} {} {}", object, index, value)
+            }
+            Instruction::Slice { dst, object, op } => {
+                write!(f, "{} = slice {} {}", dst, object, op)
             }
         }
     }

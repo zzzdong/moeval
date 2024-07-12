@@ -6,7 +6,7 @@ use pest::{
     Parser, Span,
 };
 
-use crate::ast::*;
+use super::ast::*;
 
 #[derive(Debug)]
 pub struct ParseError(Box<pest::error::Error<Rule>>);
@@ -39,7 +39,7 @@ impl std::error::Error for ParseError {}
 type Result<T> = std::result::Result<T, ParseError>;
 
 #[derive(pest_derive::Parser)]
-#[grammar = "grammar.pest"]
+#[grammar = "compiler/grammar.pest"]
 struct PestParser;
 
 pub fn parse_file(input: &str) -> Result<Program> {
@@ -66,8 +66,7 @@ fn pratt_parser() -> &'static PrattParser<Rule> {
                 | Op::infix(Rule::mul_assign_operator, Assoc::Right)
                 | Op::infix(Rule::div_assign_operator, Assoc::Right)
                 | Op::infix(Rule::mod_assign_operator, Assoc::Right))
-            .op(Op::infix(Rule::range_to_operator, Assoc::Left)
-                | Op::infix(Rule::range_operator, Assoc::Left))
+            .op(Op::infix(Rule::range_operator, Assoc::Left))
             .op(Op::infix(Rule::or_operator, Assoc::Left))
             .op(Op::infix(Rule::and_operator, Assoc::Left))
             .op(Op::infix(Rule::equal_operator, Assoc::Left)
@@ -519,6 +518,7 @@ fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> 
         Rule::slice_operator => {
             let mut begin = None;
             let mut end = None;
+            let mut range = BinOp::Range;
 
             for arg in op.into_inner() {
                 match arg.as_rule() {
@@ -532,11 +532,14 @@ fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> 
                             arg.into_inner().next().unwrap(),
                         )?))
                     }
-                    _ => unreachable!(),
+                    Rule::range_operator => {
+                        range = arg.as_str().parse::<BinOp>().unwrap();
+                    }
+                    r => unreachable!("{r:?}"),
                 }
             }
 
-            let expr = SliceExpression { object, begin, end };
+            let expr = SliceExpression { object, range, begin, end };
 
             Ok(Expression::Slice(expr))
         }
@@ -658,6 +661,34 @@ fn parse_env(pair: Pair<Rule>) -> Result<EnvironmentExpression> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_slice() {
+        let input = r#"
+            let a = 1..=10;
+            let b = 1..10;
+            let arr = [1, 2, 3, 4, 5];
+            let slice0 = arr[1..3];
+            let slice1 = arr[1..=3];
+            let slice2 = arr[1..];
+            let slice3 = arr[..3];
+            let slice4 = arr[..=3];
+            let slice5 = arr[..];
+        "#;
+        let pairs = PestParser::parse(Rule::program, input);
+        println!("ret: {pairs:?}");
+
+        let mut pairs = pairs.unwrap();
+
+        let pair = pairs.next().unwrap();
+
+        let program = parse_program(pair).unwrap();
+
+        for stmt in program.stmts {
+            println!("{stmt:?}");
+        }
+        
+    }
 
     #[test]
     fn parse_types() {

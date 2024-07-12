@@ -1,10 +1,10 @@
-mod ast;
-mod codegen;
 mod compiler;
 mod error;
 mod ir;
-mod object;
-mod parser;
-mod types;
-mod value;
 mod vm;
+
+pub use error::Error;
+pub use vm::{
+    Array, Environment, Evaluator, Map, NativeFunction, Object, RuntimeError, Tuple, Value,
+    ValueRef,
+};

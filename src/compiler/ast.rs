@@ -197,6 +197,7 @@ pub struct IndexExpression {
 #[derive(Debug, Clone)]
 pub struct SliceExpression {
     pub object: Box<Expression>,
+    pub range: BinOp,
     pub begin: Option<Box<Expression>>,
     pub end: Option<Box<Expression>>,
 }
@@ -226,7 +227,7 @@ pub enum BinOp {
     NotEqual,
     As,
     Range,
-    RangeTo,
+    RangeInclusive,
     Path,
     Assign,
     AddAssign,
@@ -254,7 +255,7 @@ impl fmt::Display for BinOp {
             BinOp::NotEqual => write!(f, "!="),
             BinOp::As => write!(f, "as"),
             BinOp::Range => write!(f, ".."),
-            BinOp::RangeTo => write!(f, "..="),
+            BinOp::RangeInclusive => write!(f, "..="),
             BinOp::Path => write!(f, "::"),
             BinOp::Assign => write!(f, "="),
             BinOp::AddAssign => write!(f, "+="),
@@ -286,7 +287,7 @@ impl FromStr for BinOp {
             "!=" => Ok(BinOp::NotEqual),
             "as" => Ok(BinOp::As),
             ".." => Ok(BinOp::Range),
-            "..=" => Ok(BinOp::RangeTo),
+            "..=" => Ok(BinOp::RangeInclusive),
             "=" => Ok(BinOp::Assign),
             "+=" => Ok(BinOp::AddAssign),
             "-=" => Ok(BinOp::SubAssign),

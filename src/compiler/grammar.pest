@@ -185,8 +185,7 @@ prefix_operator = _{ not_operator | negative_operator }
 
 /// Branches or sequences.
 infix_operator = _{
-  range_to_operator
-  | add_assign_operator
+  add_assign_operator
   | sub_assign_operator
   | mul_assign_operator
   | div_assign_operator
@@ -240,7 +239,7 @@ index_operator = { "[" ~ index_arg ~ "]" }
 index_arg = { expression }
 
 /// Slice Expression
-slice_operator = { "[" ~ slice_begin? ~ ".." ~ slice_end? ~ "]" }
+slice_operator = { "[" ~ slice_begin? ~ range_operator ~ slice_end? ~ "]" }
 
 slice_begin = { expression }
 
@@ -283,10 +282,7 @@ pow_operator = { "^" }
 try_operator = { "?" }
 
 /// A range operator.
-range_operator = { ".." }
-
-/// A range to operator.
-range_to_operator = { "..=" }
+range_operator = { "..=" | ".." }
 
 /// A and operator.
 and_operator = { "&&" }
