@@ -1,7 +1,18 @@
 [package]
 name = "moexpr"
-version = "0.1.0"
+version = "0.1.0-alpha"
 edition = "2021"
+authors = ["zzzdong <kuwater@163.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/zzzdong/moeval"
+homepage = "https://github.com/zzzdong/moeval"
+documentation = "https://docs.rs/moeval/"
+description = """
+a toy interpreter
+"""
+categories = ["asynchronous", "network-programming"]
+keywords = ["eval", "interpreter"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
