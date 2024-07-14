@@ -92,6 +92,13 @@ impl StackFrame {
             _ => unreachable!("Invalid address"),
         }
     }
+
+    fn take_value(&mut self, addr: Address) -> ValueRef {
+        match addr {
+            Address::Stack(index) => std::mem::take(&mut self.values[index]),
+            Address::Function(func) => ValueRef::new(Value::new(UserFunction::new(func))),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -126,6 +133,10 @@ impl Stack {
 
     fn store_value(&mut self, addr: Address, value: ValueRef) {
         self.top_mut().unwrap().store_value(addr, value);
+    }
+
+    fn take_value(&mut self, addr: Address) -> Value {
+        self.top_mut().unwrap().load_value(addr).take()
     }
 
     fn load_argument(&self, index: usize) -> ValueRef {
@@ -349,7 +360,7 @@ impl Evaluator {
                     ctx.stack.store_value(dst, value);
                 }
                 Instruction::MakeIterator { iter, result } => {
-                    let iter = ctx.stack.load_value(iter);
+                    let mut iter = ctx.stack.load_value(iter);
                     let iter = iter.borrow_mut();
 
                     let iterator = iter.make_iterator()?;
@@ -362,7 +373,7 @@ impl Evaluator {
                     next,
                     after_blk,
                 } => {
-                    let iterator = ctx.stack.load_value(iter);
+                    let mut iterator = ctx.stack.load_value(iter);
                     let mut iterator = iterator.borrow_mut();
 
                     let enumerator = iterator.try_downcast_mut::<Enumerator>()?;
@@ -388,7 +399,7 @@ impl Evaluator {
                 }
                 Instruction::ArrayPush { array, value } => {
                     let element = ctx.stack.load_value(value);
-                    let arr = ctx.stack.load_value(array);
+                    let mut arr = ctx.stack.load_value(array);
                     let mut arr = arr.borrow_mut();
 
                     let array = arr.try_downcast_mut::<Array>()?;
@@ -411,7 +422,7 @@ impl Evaluator {
                     index,
                     value,
                 } => {
-                    let object = ctx.stack.load_value(object);
+                    let mut object = ctx.stack.load_value(object);
                     let mut object = object.borrow_mut();
                     let index = ctx.stack.load_value(index);
                     let value = ctx.stack.load_value(value);
@@ -442,7 +453,7 @@ impl Evaluator {
                         self.call_function(ctx, id, args, result)?;
                     }
                     Address::Stack(_) => {
-                        let callable = ctx.stack.load_value(func);
+                        let mut callable = ctx.stack.load_value(func);
                         let mut callable = callable.borrow_mut();
                         let callable = callable.deref_mut();
 
@@ -470,7 +481,7 @@ impl Evaluator {
                     args,
                     result,
                 } => {
-                    let object = ctx.stack.load_value(object);
+                    let mut object = ctx.stack.load_value(object);
 
                     let mut obj = object.borrow_mut();
 
@@ -490,6 +501,19 @@ impl Evaluator {
                     let value = value.map(|v| ctx.stack.load_value(v));
                     return Ok(ControlFlow::Return(value));
                 }
+                // Instruction::Await { promise, dst } => {
+                //     let promise = ctx.stack.take_value(promise);
+                //     println!("== {promise:?}");
+                //     let promise = promise.try_cast::<Promise>().unwrap();
+                //     let fut = promise.0;
+
+                //     let join_handle = tokio::spawn(async move {
+                //        fut.await
+                //       });
+                //     let value = futures::executor::block_on(join_handle).unwrap();
+
+                //     ctx.stack.store_value(dst, ValueRef::new(value));
+                // }
                 _ => unimplemented!("unimplemented: {inst:?}"),
             }
         }

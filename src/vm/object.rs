@@ -2,6 +2,7 @@ use std::any::type_name;
 use std::fmt;
 use std::marker::PhantomData;
 
+use futures::Future;
 use indexmap::IndexMap;
 
 use crate::ir::{FunctionId, Opcode, Primitive};
@@ -31,6 +32,7 @@ pub enum OperateKind {
     IterateNext,
     Display,
     TypeCast,
+    Await,
 }
 
 impl fmt::Display for OperateKind {
@@ -56,6 +58,7 @@ impl fmt::Display for OperateKind {
             OperateKind::IterateNext => write!(f, "iterate_next"),
             OperateKind::Display => write!(f, "display"),
             OperateKind::TypeCast => write!(f, "type_cast"),
+            OperateKind::Await => write!(f, "await"),
         }
     }
 }
@@ -205,6 +208,15 @@ pub trait Object: std::any::Any + std::fmt::Debug {
             "unimplemented",
         ))
     }
+
+    fn into_future(
+        self: Box<Self>,
+    ) -> Result<Box<dyn Future<Output = Value> + Unpin + Send + 'static>, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::Await,
+            "unimplemented",
+        ))
+    }
 }
 
 /// Undefined
@@ -214,6 +226,16 @@ pub struct Undefined;
 impl Object for Undefined {
     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
         let other = other.try_downcast_ref::<Undefined>()?;
+        self.partial_cmp(other).ok_or_else(|| {
+            RuntimeError::invalid_operation(OperateKind::Compare, "can not compare undefined")
+        })
+    }
+}
+
+/// ()
+impl Object for () {
+    fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
+        let other = other.try_downcast_ref::<()>()?;
         self.partial_cmp(other).ok_or_else(|| {
             RuntimeError::invalid_operation(OperateKind::Compare, "can not compare undefined")
         })
@@ -963,38 +985,50 @@ impl Object for Map {
 
 /// Range
 #[derive(Debug)]
-pub struct Range {
-    begin: i64,
-    end: i64,
-    bounded: bool,
+pub enum Range {
+    Range { begin: i64, end: i64 },
+    RangeInclusive { begin: i64, end: i64 },
 }
 
 impl Range {
     pub fn new(begin: ValueRef, end: ValueRef, bounded: bool) -> Result<Self, RuntimeError> {
+        if bounded {
+            Self::range_inclusive(begin, end)
+        } else {
+            Self::range(begin, end)
+        }
+    }
+
+    pub fn range(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
         let begin = begin.borrow();
-        let begin = begin.try_downcast_ref::<i64>()?;
+        let begin = begin.try_downcast_ref::<i64>().copied()?;
 
         let end = end.borrow();
-        let end = end.try_downcast_ref::<i64>()?;
+        let end = end.try_downcast_ref::<i64>().copied()?;
 
-        Ok(Range {
-            begin: *begin,
-            end: *end,
-            bounded,
-        })
+        Ok(Range::Range { begin, end })
+    }
+
+    pub fn range_inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+        let begin = begin.borrow();
+        let begin = begin.try_downcast_ref::<i64>().copied()?;
+
+        let end = end.borrow();
+        let end = end.try_downcast_ref::<i64>().copied()?;
+
+        Ok(Range::RangeInclusive { begin, end })
     }
 }
 
 impl Object for Range {
     fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
-        if self.bounded {
-            Ok(Box::new(
-                (self.begin..=self.end).map(|i| Value::from(i).into()),
-            ))
-        } else {
-            Ok(Box::new(
-                (self.begin..self.end).map(|i| Value::from(i).into()),
-            ))
+        match self {
+            Range::Range { begin, end } => {
+                Ok(Box::new((*begin..*end).map(|i| Value::from(i).into())))
+            }
+            Range::RangeInclusive { begin, end } => {
+                Ok(Box::new((*begin..=*end).map(|i| Value::from(i).into())))
+            }
         }
     }
 }
@@ -1080,6 +1114,22 @@ impl Object for Enumerator {
     }
 }
 
+pub struct Promise(pub(crate) Box<dyn Future<Output = Value> + Unpin + Send + 'static>);
+
+impl Promise {
+    pub fn new(fut: impl Future<Output = Value> + Unpin + Send + 'static) -> Self {
+        Self(Box::new(fut))
+    }
+}
+
+impl fmt::Debug for Promise {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Promise").finish()
+    }
+}
+
+impl Object for Promise {}
+
 /// UserFunction
 #[derive(Debug)]
 pub struct UserFunction(pub(crate) FunctionId);
@@ -1143,30 +1193,33 @@ pub trait IntoRet {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError>;
 }
 
-// impl<T> IntoRet for T
-// where
-//     T: Object,
-// {
-//     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
-//         Ok(Some(Value::from(self)))
-//     }
-// }
-
-impl IntoRet for Result<Option<Value>, RuntimeError> {
+impl IntoRet for Value {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
-        self
+        Ok(Some(self))
     }
 }
 
-impl IntoRet for () {
-    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
-        Ok(None)
-    }
-}
-
-impl IntoRet for i64 {
+impl<T: Object> IntoRet for T {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
         Ok(Some(Value::from(self)))
+    }
+}
+
+impl IntoRet for Result<Value, RuntimeError> {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        self.map(|v| Some(v))
+    }
+}
+
+impl<T: Object> IntoRet for Result<T, RuntimeError> {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        self.map(|v| Some(Value::new(v)))
+    }
+}
+
+impl<T: Object> IntoRet for Result<Option<T>, RuntimeError> {
+    fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
+        self.map(|v| v.map(Value::new))
     }
 }
 
@@ -1295,6 +1348,7 @@ impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13,
 impl_callable_tuple!(T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
  */
 
+/* TODO:
 pub struct Method<T> {
     pub name: String,
     pub func: Box<dyn MethodFunction<T>>,
@@ -1382,3 +1436,5 @@ where
         (self)(this, arg).into_ret()
     }
 }
+
+*/

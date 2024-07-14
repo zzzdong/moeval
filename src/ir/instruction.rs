@@ -124,6 +124,10 @@ pub enum Instruction {
         lhs: Address,
         rhs: Address,
     },
+    Await {
+        promise: Address,
+        dst: Address,
+    },
     Call {
         func: Address,
         args: Vec<Address>,
@@ -222,6 +226,9 @@ impl std::fmt::Display for Instruction {
             }
             Instruction::LoadArg { index, dst } => {
                 write!(f, "{} = load_arg #{}", dst, index)
+            }
+            Instruction::Await { promise, dst } => {
+                write!(f, "{} = await {}", dst, promise)
             }
             Instruction::Call {
                 func,

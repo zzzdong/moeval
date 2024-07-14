@@ -226,7 +226,10 @@ impl<'a> Builder<'a> {
         dst
     }
 
-    // fn new_object(&mut self) -> ValueRef {
-
-    // }
+    pub fn await_promise(&mut self, promise: Address) -> Address {
+        let dst = self.create_alloc();
+        self.flow_graph_mut()
+            .emit(Instruction::Await { dst, promise });
+        dst
+    }
 }

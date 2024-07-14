@@ -144,6 +144,7 @@ pub enum Expression {
     Index(IndexExpression),
     Slice(SliceExpression),
     Try(Box<Expression>),
+    Await(Box<Expression>),
 }
 
 impl Expression {

@@ -317,6 +317,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             Expression::Index(index) => self.compile_index(index),
             Expression::Map(map) => self.compile_map(map),
             Expression::Slice(slice) => self.compile_slice(slice),
+            Expression::Await(expr) => self.compile_await(*expr),
             _ => unimplemented!("{:?}", expr),
         }
     }
@@ -437,6 +438,12 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
 
         map
+    }
+
+    fn compile_await(&mut self, expr: Expression) -> Address {
+        let promise = self.compile_expression(expr);
+
+        self.builder.await_promise(promise)
     }
 
     fn compile_index(&mut self, expr: IndexExpression) -> Address {

@@ -1,4 +1,6 @@
-use expr::{Environment, Evaluator, RuntimeError, Value, ValueRef};
+use moexpr::{Environment, Evaluator, Promise, RuntimeError, Value, ValueRef};
+
+use futures::{Future, FutureExt, TryFuture, TryFutureExt};
 
 fn init() {
     let _ = env_logger::builder()
@@ -18,7 +20,7 @@ fn fib(n: i64) -> i64 {
     return fib(n - 1) + fib(n - 2);
 }
 
-fn println(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
+fn println(args: &[ValueRef]) {
     let s = args
         .iter()
         .map(|v| format!("{v}"))
@@ -26,8 +28,6 @@ fn println(args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
         .join("");
 
     println!("{}", s);
-
-    Ok(None)
 }
 
 #[test]
@@ -166,7 +166,6 @@ fn test_slice() {
     assert_eq!(retval, 9);
 }
 
-
 #[test]
 fn test_eval_for() {
     init();
@@ -247,6 +246,40 @@ fn test_eval() {
     
     println("-->", sum, !true);
     return sum;
+    "#;
+
+    let retval = eval.eval(script, &env).unwrap();
+
+    println!("ret: {:?}", retval);
+
+    assert_eq!(retval.unwrap(), 143);
+}
+
+fn http_request(url: String) -> Result<Promise, RuntimeError> {
+    Ok(Promise::new(Box::pin(async move {
+        println!("request: {}", url);
+
+        let resp = reqwest::get(url).await.unwrap();
+
+        // println!("resp: {}", resp.text().await.unwrap());
+
+        Value::new(resp.text().await.unwrap())
+    })))
+}
+
+#[tokio::test]
+async fn test_await() {
+    init();
+
+    let mut env = Environment::new();
+    let mut eval = Evaluator::new();
+
+    env.define_function("println", println);
+    env.define_function("http_request", http_request);
+
+    let script = r#"
+    let resp = http_request("https://www.baidu.com").await;
+    return resp;
     "#;
 
     let retval = eval.eval(script, &env).unwrap();

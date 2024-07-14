@@ -61,6 +61,17 @@ impl Value {
         Err(RuntimeError::invalid_type::<T>(&self.0))
     }
 
+    pub fn try_cast<T: Object>(mut self) -> Result<Box<T>, RuntimeError> {
+        if TypeId::of::<T>() == (*self.0).type_id() {
+            return unsafe {
+                Ok(Box::from_raw(&mut *(&mut *self.0 as *mut dyn Object as *mut T)))
+            } 
+        }
+
+        Err(RuntimeError::invalid_type::<T>(&self.0))
+    }
+
+
     // FIXME: stupid
     pub(crate) fn from_primitive(value: Primitive) -> Value {
         match value {
@@ -160,7 +171,7 @@ impl ValueRef {
         self.0.as_ref().borrow()
     }
 
-    pub fn borrow_mut(&self) -> RefMut<Value> {
+    pub fn borrow_mut(&mut self) -> RefMut<Value> {
         self.0.borrow_mut()
     }
 

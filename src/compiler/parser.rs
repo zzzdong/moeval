@@ -86,7 +86,9 @@ fn pratt_parser() -> &'static PrattParser<Rule> {
             .op(Op::postfix(Rule::try_operator))
             .op(Op::infix(Rule::as_operator, Assoc::Left))
             .op(Op::infix(Rule::dot_operator, Assoc::Left))
-            .op(Op::postfix(Rule::member_operator)
+            .op(Op::postfix(Rule::try_operator)
+                | Op::postfix(Rule::await_operator)
+                | Op::postfix(Rule::member_operator)
                 | Op::postfix(Rule::call_operator)
                 | Op::postfix(Rule::index_operator)
                 | Op::postfix(Rule::slice_operator))
@@ -539,9 +541,18 @@ fn parse_postfix(lhs: Result<Expression>, op: Pair<Rule>) -> Result<Expression> 
                 }
             }
 
-            let expr = SliceExpression { object, range, begin, end };
+            let expr = SliceExpression {
+                object,
+                range,
+                begin,
+                end,
+            };
 
             Ok(Expression::Slice(expr))
+        }
+        Rule::await_operator => {
+            let expr = Expression::Await(object);
+            Ok(expr)
         }
         _ => unreachable!("unknown postfix: {:?}", op),
     }
@@ -663,6 +674,52 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_await() {
+        let input = r#"
+            let a = http_request("https://www.baidu.com").await?;
+            let b = http_request("https://www.baidu.com").await?;
+        "#;
+
+        let pairs = PestParser::parse(Rule::program, input);
+        println!("pairs: {pairs:?} \n");
+
+        let mut pairs = pairs.unwrap();
+
+        let pair = pairs.next().unwrap();
+
+        let program = parse_program(pair).unwrap();
+
+        for (i, stmt) in program.stmts.iter().enumerate() {
+            println!("stmt[{i}]: {stmt:?}");
+        }
+    }
+
+    #[test]
+    fn test_range() {
+        let input = r#"
+        for i in 0..10 {}
+        for i in 0..=10 {}
+        // for i in 0.. {}
+        // for i in ..10 {}
+        // for i in ..=10 {}
+        // for i in .. {}
+        "#;
+
+        let pairs = PestParser::parse(Rule::program, input);
+        println!("pairs: {pairs:?} \n");
+
+        let mut pairs = pairs.unwrap();
+
+        let pair = pairs.next().unwrap();
+
+        let program = parse_program(pair).unwrap();
+
+        for (i, stmt) in program.stmts.iter().enumerate() {
+            println!("stmt[{i}]: {stmt:?}");
+        }
+    }
+
+    #[test]
     fn test_slice() {
         let input = r#"
             let a = 1..=10;
@@ -675,6 +732,7 @@ mod test {
             let slice4 = arr[..=3];
             let slice5 = arr[..];
         "#;
+
         let pairs = PestParser::parse(Rule::program, input);
         println!("ret: {pairs:?}");
 
@@ -687,7 +745,6 @@ mod test {
         for stmt in program.stmts {
             println!("{stmt:?}");
         }
-        
     }
 
     #[test]
