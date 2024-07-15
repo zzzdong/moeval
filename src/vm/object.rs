@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use futures::Future;
 use indexmap::IndexMap;
 
-use crate::ir::{FunctionId, Opcode, Primitive};
+use crate::ir::{FunctionId, Primitive};
 
 use super::value::{Value, ValueRef};
 use super::RuntimeError;
@@ -859,6 +859,12 @@ impl Object for Array {
 #[derive(Debug)]
 pub struct Map(IndexMap<Primitive, ValueRef>);
 
+impl Default for Map {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Map {
     pub fn new() -> Map {
         Map(IndexMap::new())
@@ -1207,7 +1213,7 @@ impl<T: Object> IntoRet for T {
 
 impl IntoRet for Result<Value, RuntimeError> {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
-        self.map(|v| Some(v))
+        self.map(Some)
     }
 }
 

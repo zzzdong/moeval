@@ -2,18 +2,21 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 
-use pest::pratt_parser::Op;
-
 use super::object::*;
 use super::value::{Value, ValueRef};
 use super::RuntimeError;
 use crate::compiler::{CompileError, Compiler};
 use crate::error::Error;
 use crate::ir::{Address, Block, BlockId, FunctionId, Instruction, Module, Opcode};
-use crate::vm::object;
 
 pub struct Environment {
     symbols: HashMap<String, ValueRef>,
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Environment {
@@ -165,6 +168,12 @@ struct Context<'a> {
 }
 
 pub struct Evaluator {}
+
+impl Default for Evaluator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Evaluator {
     pub fn new() -> Self {

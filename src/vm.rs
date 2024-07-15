@@ -5,9 +5,7 @@ mod object;
 mod value;
 
 pub use eval::{Environment, Evaluator};
-pub use object::{
-    Array, Enumerator, Map, NativeFunction, Object, Promise, Tuple, Undefined, UserFunction,
-};
+pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple};
 pub use value::{Value, ValueRef};
 
 #[derive(Debug)]
