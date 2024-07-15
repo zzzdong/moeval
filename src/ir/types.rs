@@ -153,30 +153,16 @@ impl Block {
 
 #[derive(Debug, Clone, Default)]
 pub struct FlowGraph {
-    pub values: Vec<Address>,
     pub entry: Option<BlockId>,
-    pub blocks: Vec<Block>,
     current_block: Option<BlockId>,
 }
 
 impl FlowGraph {
     pub fn new() -> Self {
         Self {
-            values: Vec::new(),
-            blocks: Vec::new(),
             entry: None,
             current_block: None,
         }
-    }
-
-    pub fn get_block(&self, id: BlockId) -> Option<&Block> {
-        self.blocks.get(id.as_usize())
-    }
-
-    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
-        let id = BlockId::new(self.blocks.len());
-        self.blocks.push(Block::new(id, label.into()));
-        id
     }
 
     pub fn entry(&self) -> Option<BlockId> {
@@ -187,21 +173,14 @@ impl FlowGraph {
         self.entry = Some(block);
     }
 
-    pub fn switch_to_block(&mut self, block: BlockId) {
+    pub fn switch_to_block(&mut self, block: BlockId) -> Option<BlockId> {
+        let old = self.current_block;
         self.current_block = Some(block);
+        old
     }
 
-    pub fn emit(&mut self, instruction: Instruction) {
-        let block = self.current_block.expect("No current block");
-        self.blocks[block.as_usize()].emit(instruction);
-    }
-
-    pub fn create_alloc(&mut self) -> Address {
-        let idx = self.values.len();
-        let v = Address::Stack(idx);
-        self.values.push(v);
-        self.emit(Instruction::Alloc { dst: v });
-        v
+    pub fn current_block(&self) -> Option<BlockId> {
+        self.current_block
     }
 }
 
@@ -247,26 +226,20 @@ impl Function {
         }
     }
 
-    pub fn get_block(&self, id: BlockId) -> Option<&Block> {
-        self.flow_graph.get_block(id)
-    }
-
-    pub fn get_entry_block(&self) -> Option<&Block> {
-        match self.flow_graph.entry {
-            Some(id) => self.flow_graph.get_block(id),
-            None => None,
-        }
+    pub fn entry(&self) -> BlockId {
+        self.flow_graph.entry.expect("function no entry")
     }
 }
 
-pub struct Context {
-    /// The flow graph we are building.
+pub struct FunctionContext {
+    pub values: Vec<Address>,
     pub flow_graph: FlowGraph,
 }
 
-impl Context {
+impl FunctionContext {
     pub fn new() -> Self {
         Self {
+            values: Vec::new(),
             flow_graph: FlowGraph::new(),
         }
     }
@@ -277,6 +250,7 @@ pub struct Module {
     pub constants: IndexSet<Primitive>,
     pub functions: Vec<Function>,
     pub entry: Option<FunctionId>,
+    pub blocks: Vec<Block>,
 }
 
 impl Module {
@@ -285,6 +259,7 @@ impl Module {
             constants: IndexSet::new(),
             functions: Vec::new(),
             entry: None,
+            blocks: Vec::new(),
         }
     }
 
@@ -292,8 +267,12 @@ impl Module {
         self.functions.get(id.as_usize())
     }
 
-    pub fn make_context(&self) -> Context {
-        Context::new()
+    pub fn get_block(&self, block: BlockId) -> Option<&Block> {
+        self.blocks.get(block.as_usize())
+    }
+
+    pub fn make_context(&self) -> FunctionContext {
+        FunctionContext::new()
     }
 
     pub fn make_constant(&mut self, value: Primitive) -> ConstantId {
@@ -313,8 +292,8 @@ impl Module {
         id
     }
 
-    pub fn define_function(&mut self, id: FunctionId, context: Context) {
-        let Context { flow_graph, .. } = context;
+    pub fn define_function(&mut self, id: FunctionId, context: FunctionContext) {
+        let FunctionContext { flow_graph, .. } = context;
 
         let func = &mut self.functions[id.as_usize()];
 
@@ -324,6 +303,18 @@ impl Module {
     pub fn set_entry(&mut self, id: FunctionId) {
         self.entry = Some(id);
     }
+
+    pub fn emit(&mut self, block: BlockId, inst: Instruction) {
+        self.blocks[block.as_usize()].instructions.push(inst);
+    }
+
+    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
+        let id = BlockId::new(self.blocks.len());
+        let block = Block::new(id, label);
+        self.blocks.push(block);
+
+        id
+    }
 }
 
 impl fmt::Display for Module {
@@ -332,18 +323,24 @@ impl fmt::Display for Module {
             writeln!(f, "#{i}:\t {constant:?}")?;
         }
 
-        for func in self.functions.iter() {
-            writeln!(
-                f,
-                "function[{}]@{}()",
-                func.id.as_usize(),
-                func.signature.name
-            )?;
-            for block in func.flow_graph.blocks.iter() {
-                writeln!(f, "block#{}:", block.id.as_usize())?;
-                for instruction in block.instructions.iter() {
-                    writeln!(f, "\t{}", instruction)?;
-                }
+        // for func in self.functions.iter() {
+        //     writeln!(
+        //         f,
+        //         "function[{}]@{}()",
+        //         func.id.as_usize(),
+        //         func.signature.name
+        //     )?;
+        //     for block in func.flow_graph.blocks.iter() {
+        //         writeln!(f, "block#{}:", block.id.as_usize())?;
+        //         for instruction in block.instructions.iter() {
+        //             writeln!(f, "\t{}", instruction)?;
+        //         }
+        //     }
+        // }
+        for block in self.blocks.iter() {
+            writeln!(f, "block#{}:", block.id.as_usize())?;
+            for instruction in block.instructions.iter() {
+                writeln!(f, "\t{}", instruction)?;
             }
         }
 

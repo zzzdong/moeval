@@ -2,12 +2,12 @@ use super::instruction::*;
 use super::types::*;
 
 pub struct Builder<'a> {
-    context: &'a mut Context,
+    context: &'a mut FunctionContext,
     pub(crate) module: &'a mut Module,
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(context: &'a mut Context, module: &'a mut Module) -> Self {
+    pub fn new(context: &'a mut FunctionContext, module: &'a mut Module) -> Self {
         Self { context, module }
     }
 
@@ -19,20 +19,32 @@ impl<'a> Builder<'a> {
         &mut self.context.flow_graph
     }
 
+    fn emit(&mut self, inst: Instruction) {
+        self.module.emit(
+            self.context
+                .flow_graph
+                .current_block()
+                .expect("no current block"),
+            inst,
+        );
+    }
+
     pub fn make_constant(&mut self, value: Primitive) -> Address {
         let src = self.module.make_constant(value);
         let dst = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::LoadConst { dst, src });
+        self.emit(Instruction::LoadConst { dst, src });
         dst
     }
 
     pub fn create_alloc(&mut self) -> Address {
-        self.flow_graph_mut().create_alloc()
+        let addr = Address::Stack(self.context.values.len());
+        self.context.values.push(addr);
+        self.emit(Instruction::Alloc { dst: addr });
+        addr
     }
 
     pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
-        self.flow_graph_mut().create_block(label)
+        self.module.create_block(label)
     }
 
     pub fn switch_to_block(&mut self, block: BlockId) {
@@ -44,9 +56,9 @@ impl<'a> Builder<'a> {
     }
 
     pub fn unaryop(&mut self, op: Opcode, src: Address) -> Address {
-        let result = self.flow_graph_mut().create_alloc();
+        let result = self.create_alloc();
 
-        self.flow_graph_mut().emit(Instruction::UnaryOp {
+        self.emit(Instruction::UnaryOp {
             op,
             dst: result,
             src,
@@ -56,9 +68,9 @@ impl<'a> Builder<'a> {
     }
 
     pub fn binop(&mut self, op: Opcode, lhs: Address, rhs: Address) -> Address {
-        let result = self.flow_graph_mut().create_alloc();
+        let result = self.create_alloc();
 
-        self.flow_graph_mut().emit(Instruction::BinaryOp {
+        self.emit(Instruction::BinaryOp {
             op,
             dst: result,
             lhs,
@@ -69,13 +81,13 @@ impl<'a> Builder<'a> {
     }
 
     pub fn assign(&mut self, dst: Address, src: Address) {
-        self.flow_graph_mut().emit(Instruction::Store { dst, src })
+        self.emit(Instruction::Store { dst, src })
     }
 
     pub fn get_property(&mut self, object: Address, property: &str) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut().emit(Instruction::PropertyGet {
+        self.emit(Instruction::PropertyGet {
             dst: result,
             object,
             property: property.to_string(),
@@ -85,7 +97,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn set_property(&mut self, object: Address, property: &str, value: Address) {
-        self.flow_graph_mut().emit(Instruction::PropertySet {
+        self.emit(Instruction::PropertySet {
             object,
             property: property.to_string(),
             value,
@@ -100,7 +112,7 @@ impl<'a> Builder<'a> {
     ) -> Address {
         let dst = self.create_alloc();
 
-        self.flow_graph_mut().emit(Instruction::PropertyCall {
+        self.emit(Instruction::PropertyCall {
             object,
             property,
             args,
@@ -113,8 +125,7 @@ impl<'a> Builder<'a> {
     pub fn load_external_variable(&mut self, name: String) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut()
-            .emit(Instruction::LoadEnv { dst: result, name });
+        self.emit(Instruction::LoadEnv { dst: result, name });
 
         result
     }
@@ -122,8 +133,7 @@ impl<'a> Builder<'a> {
     pub fn load_argument(&mut self, index: usize) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut()
-            .emit(Instruction::LoadArg { dst: result, index });
+        self.emit(Instruction::LoadArg { dst: result, index });
 
         result
     }
@@ -131,14 +141,13 @@ impl<'a> Builder<'a> {
     pub fn make_call(&mut self, func: Address, args: Vec<Address>) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut()
-            .emit(Instruction::Call { func, args, result });
+        self.emit(Instruction::Call { func, args, result });
 
         result
     }
 
     pub fn br_if(&mut self, condition: Address, true_blk: BlockId, false_blk: BlockId) {
-        self.flow_graph_mut().emit(Instruction::BrIf {
+        self.emit(Instruction::BrIf {
             condition,
             true_blk,
             false_blk,
@@ -146,18 +155,17 @@ impl<'a> Builder<'a> {
     }
 
     pub fn br(&mut self, dst_blk: BlockId) {
-        self.flow_graph_mut().emit(Instruction::Br { dst: dst_blk });
+        self.emit(Instruction::Br { dst: dst_blk });
     }
 
     pub fn return_(&mut self, value: Option<Address>) {
-        self.flow_graph_mut().emit(Instruction::Return { value });
+        self.emit(Instruction::Return { value });
     }
 
     pub fn make_iterator(&mut self, iter: Address) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut()
-            .emit(Instruction::MakeIterator { iter, result });
+        self.emit(Instruction::MakeIterator { iter, result });
 
         result
     }
@@ -165,7 +173,7 @@ impl<'a> Builder<'a> {
     pub fn iterate_next(&mut self, iter: Address, next: Address, after_blk: BlockId) -> Address {
         let result = self.create_alloc();
 
-        self.flow_graph_mut().emit(Instruction::IterateNext {
+        self.emit(Instruction::IterateNext {
             iter,
             next,
             after_blk,
@@ -176,7 +184,7 @@ impl<'a> Builder<'a> {
 
     pub fn range(&mut self, begin: Address, end: Address, bounded: bool) -> Address {
         let result = self.create_alloc();
-        self.flow_graph_mut().emit(Instruction::Range {
+        self.emit(Instruction::Range {
             begin,
             end,
             bounded,
@@ -187,32 +195,29 @@ impl<'a> Builder<'a> {
 
     pub fn new_array(&mut self, size: Option<usize>) -> Address {
         let array = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::NewArray { dst: array, size });
+        self.emit(Instruction::NewArray { dst: array, size });
         array
     }
 
     pub fn array_push(&mut self, array: Address, value: Address) -> Address {
-        self.flow_graph_mut()
-            .emit(Instruction::ArrayPush { array, value });
+        self.emit(Instruction::ArrayPush { array, value });
         array
     }
 
     pub fn new_map(&mut self) -> Address {
         let map = self.create_alloc();
-        self.flow_graph_mut().emit(Instruction::NewMap { dst: map });
+        self.emit(Instruction::NewMap { dst: map });
         map
     }
 
     pub fn index_get(&mut self, object: Address, index: Address) -> Address {
         let dst = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::IndexGet { dst, object, index });
+        self.emit(Instruction::IndexGet { dst, object, index });
         dst
     }
 
     pub fn index_set(&mut self, object: Address, index: Address, value: Address) {
-        self.flow_graph_mut().emit(Instruction::IndexSet {
+        self.emit(Instruction::IndexSet {
             object,
             index,
             value,
@@ -221,15 +226,13 @@ impl<'a> Builder<'a> {
 
     pub fn slice(&mut self, object: Address, op: Opcode) -> Address {
         let dst = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::Slice { dst, object, op });
+        self.emit(Instruction::Slice { dst, object, op });
         dst
     }
 
     pub fn await_promise(&mut self, promise: Address) -> Address {
         let dst = self.create_alloc();
-        self.flow_graph_mut()
-            .emit(Instruction::Await { dst, promise });
+        self.emit(Instruction::Await { dst, promise });
         dst
     }
 }

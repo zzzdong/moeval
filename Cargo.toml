@@ -1,5 +1,5 @@
 [package]
-name = "moexpr"
+name = "moeval"
 version = "0.1.0-alpha"
 edition = "2021"
 authors = ["zzzdong <kuwater@163.com>"]
