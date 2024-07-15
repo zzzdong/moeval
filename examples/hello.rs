@@ -1,34 +1,33 @@
-use moexpr::{self, Environment, Evaluator, Promise, RuntimeError, Value};
+use moeval::{Environment, Evaluator, ValueRef};
 
 #[tokio::main]
 async fn main() {
     let mut env = Environment::new();
     let mut eval = Evaluator::new();
 
-    env.define_function("http_request", http_request);
+    env.define_function("println", println);
 
     let script = r#"
-    let resp = http_request("https://www.baidu.com").await;
-    return resp;
+    let sum = 0;
+    for i in 0..=10 {
+        sum += i;
+    }
+    println("hello, world");
+
+    return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap();
+    let retval = eval.eval(script, &env);
 
     println!("ret: {:?}", retval);
 }
 
-fn http_request(url: String) -> Result<Promise, RuntimeError> {
-    Ok(Promise::new(Box::pin(async { Value::new(0) })))
-}
+fn println(args: &[ValueRef]) {
+    let s = args
+        .iter()
+        .map(|v| format!("{v}"))
+        .collect::<Vec<String>>()
+        .join("");
 
-fn http_request2(url: String) -> Result<Promise, RuntimeError> {
-    Ok(Promise::new(Box::pin(async move {
-        println!("request: {}", url);
-
-        let resp = reqwest::get(url).await.unwrap();
-
-        // println!("resp: {}", resp.text().await.unwrap());
-
-        Value::new(resp.text().await.unwrap())
-    })))
+    println!("{}", s);
 }

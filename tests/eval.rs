@@ -1,4 +1,4 @@
-use moexpr::{Environment, Evaluator, Promise, RuntimeError, Value, ValueRef};
+use moeval::{Environment, Evaluator, Promise, RuntimeError, Value, SyncValue, ValueRef};
 
 use futures::{Future, FutureExt, TryFuture, TryFutureExt};
 
