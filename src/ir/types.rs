@@ -153,34 +153,32 @@ impl Block {
 
 #[derive(Debug, Clone, Default)]
 pub struct FlowGraph {
-    pub entry: Option<BlockId>,
+    blocks: Vec<BlockId>,
     current_block: Option<BlockId>,
 }
 
 impl FlowGraph {
     pub fn new() -> Self {
         Self {
-            entry: None,
+            blocks: Vec::new(),
             current_block: None,
         }
     }
 
     pub fn entry(&self) -> Option<BlockId> {
-        self.entry
+        self.blocks.first().copied()
     }
 
-    pub fn set_entry_block(&mut self, block: BlockId) {
-        self.entry = Some(block);
-    }
-
-    pub fn switch_to_block(&mut self, block: BlockId) -> Option<BlockId> {
-        let old = self.current_block;
+    pub fn switch_to_block(&mut self, block: BlockId) {
         self.current_block = Some(block);
-        old
     }
 
     pub fn current_block(&self) -> Option<BlockId> {
         self.current_block
+    }
+
+    pub(crate) fn add_block(&mut self, blk_id: BlockId) {
+        self.blocks.push(blk_id)
     }
 }
 
@@ -226,14 +224,20 @@ impl Function {
         }
     }
 
-    pub fn entry(&self) -> BlockId {
-        self.flow_graph.entry.expect("function no entry")
+    pub fn entry(&self) -> Option<BlockId> {
+        self.flow_graph.entry()
     }
 }
 
 pub struct FunctionContext {
     pub values: Vec<Address>,
     pub flow_graph: FlowGraph,
+}
+
+impl Default for FunctionContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FunctionContext {
@@ -251,6 +255,12 @@ pub struct Module {
     pub functions: Vec<Function>,
     pub entry: Option<FunctionId>,
     pub blocks: Vec<Block>,
+}
+
+impl Default for Module {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Module {
@@ -323,24 +333,19 @@ impl fmt::Display for Module {
             writeln!(f, "#{i}:\t {constant:?}")?;
         }
 
-        // for func in self.functions.iter() {
-        //     writeln!(
-        //         f,
-        //         "function[{}]@{}()",
-        //         func.id.as_usize(),
-        //         func.signature.name
-        //     )?;
-        //     for block in func.flow_graph.blocks.iter() {
-        //         writeln!(f, "block#{}:", block.id.as_usize())?;
-        //         for instruction in block.instructions.iter() {
-        //             writeln!(f, "\t{}", instruction)?;
-        //         }
-        //     }
-        // }
-        for block in self.blocks.iter() {
-            writeln!(f, "block#{}:", block.id.as_usize())?;
-            for instruction in block.instructions.iter() {
-                writeln!(f, "\t{}", instruction)?;
+        for func in self.functions.iter() {
+            writeln!(
+                f,
+                "function[{}]@{}()",
+                func.id.as_usize(),
+                func.signature.name
+            )?;
+            for block in func.flow_graph.blocks.iter() {
+                let block = self.get_block(*block).unwrap();
+                writeln!(f, "block#{}:", block.id.as_usize())?;
+                for instruction in block.instructions.iter() {
+                    writeln!(f, "\t{}", instruction)?;
+                }
             }
         }
 

@@ -44,15 +44,13 @@ impl<'a> Builder<'a> {
     }
 
     pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
-        self.module.create_block(label)
+        let blk_id = self.module.create_block(label);
+        self.flow_graph_mut().add_block(blk_id);
+        blk_id
     }
 
     pub fn switch_to_block(&mut self, block: BlockId) {
         self.flow_graph_mut().switch_to_block(block);
-    }
-
-    pub fn set_entry_block(&mut self, block: BlockId) {
-        self.flow_graph_mut().set_entry_block(block);
     }
 
     pub fn unaryop(&mut self, op: Opcode, src: Address) -> Address {

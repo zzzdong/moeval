@@ -2,7 +2,7 @@ use std::any::type_name;
 use std::fmt;
 use std::marker::PhantomData;
 
-use futures::Future;
+use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 
 use crate::ir::{FunctionId, Primitive};
@@ -64,7 +64,7 @@ impl fmt::Display for OperateKind {
 }
 
 pub trait Object: std::any::Any + std::fmt::Debug {
-    fn display(&self) -> String {
+    fn debug(&self) -> String {
         format!("{:?}", self)
     }
 
@@ -195,7 +195,9 @@ pub trait Object: std::any::Any + std::fmt::Debug {
         ))
     }
 
-    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+    fn make_iterator(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
         Err(RuntimeError::invalid_operation(
             OperateKind::MakeIterator,
             "unimplemented",
@@ -462,7 +464,7 @@ impl Object for f64 {
 
 /// String
 impl Object for String {
-    fn display(&self) -> String {
+    fn debug(&self) -> String {
         self.to_string()
     }
 
@@ -498,7 +500,7 @@ impl Object for String {
                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
                 }
 
-                let pat = args.first().unwrap().borrow();
+                let pat = args.first().unwrap().get();
 
                 let pat = pat.try_downcast_ref::<String>()?;
 
@@ -520,7 +522,7 @@ impl Object for String {
                 if args.len() != 1 {
                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
                 }
-                let pat = args.first().unwrap().borrow();
+                let pat = args.first().unwrap().get();
 
                 let pat = pat.try_downcast_ref::<String>()?;
 
@@ -538,7 +540,7 @@ impl Object for String {
                 if args.len() != 1 {
                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
                 }
-                let pat = args.first().unwrap().borrow();
+                let pat = args.first().unwrap().get();
 
                 let pat = pat.try_downcast_ref::<String>()?;
 
@@ -548,7 +550,7 @@ impl Object for String {
                 if args.len() != 1 {
                     return Err(RuntimeError::invalid_argument_count(1, args.len()));
                 }
-                let pat = args.first().unwrap().borrow();
+                let pat = args.first().unwrap().get();
 
                 let pat = pat.try_downcast_ref::<String>()?;
 
@@ -619,7 +621,9 @@ impl Object for String {
         Err(RuntimeError::invalid_type::<i64>(index))
     }
 
-    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+    fn make_iterator(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
         let chars = self.chars().collect::<Vec<char>>();
         Ok(Box::new(
             chars
@@ -795,7 +799,9 @@ impl Object for Array {
         }
     }
 
-    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+    fn make_iterator(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
         Ok(Box::new(self.0.clone().into_iter()))
     }
 
@@ -911,7 +917,9 @@ impl Object for Map {
             .ok_or(RuntimeError::key_not_found(key))
     }
 
-    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+    fn make_iterator(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
         Ok(Box::new(self.0.clone().into_iter().map(|(k, v)| {
             ValueRef::new(Value::new(Tuple::new(vec![
                 ValueRef::new(Value::from_primitive(k)),
@@ -950,7 +958,7 @@ impl Object for Map {
             }
             "contains_key" => {
                 if args.len() == 1 {
-                    let key = args[0].borrow();
+                    let key = args[0].get();
 
                     if let Some(key) = key.downcast_ref::<bool>() {
                         Ok(Some(Value::new(
@@ -1006,20 +1014,20 @@ impl Range {
     }
 
     pub fn range(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
-        let begin = begin.borrow();
+        let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
 
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(Range::Range { begin, end })
     }
 
     pub fn range_inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
-        let begin = begin.borrow();
+        let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
 
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(Range::RangeInclusive { begin, end })
@@ -1027,7 +1035,9 @@ impl Range {
 }
 
 impl Object for Range {
-    fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
+    fn make_iterator(
+        &self,
+    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
         match self {
             Range::Range { begin, end } => {
                 Ok(Box::new((*begin..*end).map(|i| Value::from(i).into())))
@@ -1052,18 +1062,18 @@ pub enum SliceIndex {
 
 impl SliceIndex {
     pub fn range(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
-        let begin = begin.borrow();
+        let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(SliceIndex::Range { begin, end })
     }
 
     pub fn range_inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
-        let begin = begin.borrow();
+        let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(SliceIndex::RangeInclusive { begin, end })
@@ -1074,21 +1084,21 @@ impl SliceIndex {
     }
 
     pub fn range_from(begin: ValueRef) -> Result<Self, RuntimeError> {
-        let begin = begin.borrow();
+        let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
 
         Ok(SliceIndex::RangeFrom { begin })
     }
 
     pub fn range_to(end: ValueRef) -> Result<Self, RuntimeError> {
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(SliceIndex::RangeTo { end })
     }
 
     pub fn range_to_inclusive(end: ValueRef) -> Result<Self, RuntimeError> {
-        let end = end.borrow();
+        let end = end.get();
         let end = end.try_downcast_ref::<i64>().copied()?;
 
         Ok(SliceIndex::RangeToInclusive { end })
@@ -1099,11 +1109,11 @@ impl Object for SliceIndex {}
 
 /// Enumerator
 pub struct Enumerator {
-    iter: Box<dyn Iterator<Item = ValueRef>>,
+    iter: Box<dyn Iterator<Item = ValueRef> + Send + Sync>,
 }
 
 impl Enumerator {
-    pub fn new(iter: Box<dyn Iterator<Item = ValueRef>>) -> Self {
+    pub fn new(iter: Box<dyn Iterator<Item = ValueRef> + Send + Sync>) -> Self {
         Self { iter }
     }
 }
@@ -1120,11 +1130,22 @@ impl Object for Enumerator {
     }
 }
 
-pub struct Promise(pub(crate) Box<dyn Future<Output = Value> + Unpin + Send + 'static>);
+pub struct Promise(pub(crate) Box<dyn Future<Output = Value> + Unpin + Send + Sync + 'static>);
 
 impl Promise {
-    pub fn new(fut: impl Future<Output = Value> + Unpin + Send + 'static) -> Self {
+    pub fn new(fut: impl Future<Output = Value> + Unpin + Send + Sync + 'static) -> Self {
         Self(Box::new(fut))
+    }
+}
+
+impl Future for Promise {
+    type Output = Value;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.0.poll_unpin(cx)
     }
 }
 
@@ -1151,11 +1172,11 @@ impl Object for UserFunction {}
 /// NativeFunction
 pub struct NativeFunction {
     pub name: String,
-    pub func: Box<dyn Function>,
+    pub func: Box<dyn Function + Send + Sync>,
 }
 
 impl NativeFunction {
-    pub fn new(name: impl ToString, func: Box<dyn Function>) -> Self {
+    pub fn new(name: impl ToString, func: Box<dyn Function + Send + Sync>) -> Self {
         Self {
             name: name.to_string(),
             func,
@@ -1205,7 +1226,7 @@ impl IntoRet for Value {
     }
 }
 
-impl<T: Object> IntoRet for T {
+impl<T: Object + Send + Sync> IntoRet for T {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
         Ok(Some(Value::from(self)))
     }
@@ -1217,13 +1238,13 @@ impl IntoRet for Result<Value, RuntimeError> {
     }
 }
 
-impl<T: Object> IntoRet for Result<T, RuntimeError> {
+impl<T: Object + Send + Sync> IntoRet for Result<T, RuntimeError> {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
         self.map(|v| Some(Value::new(v)))
     }
 }
 
-impl<T: Object> IntoRet for Result<Option<T>, RuntimeError> {
+impl<T: Object + Send + Sync> IntoRet for Result<Option<T>, RuntimeError> {
     fn into_ret(self) -> Result<Option<Value>, RuntimeError> {
         self.map(|v| v.map(Value::new))
     }
@@ -1244,12 +1265,12 @@ where
     T: Object + Clone,
 {
     fn from_value(value: &ValueRef) -> Result<T, RuntimeError> {
-        let value = value.borrow();
+        let value = value.get();
         value.try_downcast_ref::<T>().cloned()
     }
 }
 
-pub trait Callable<Args>: Clone + Send + Sized + 'static {
+pub trait Callable<Args>: Clone + Send + Sync + Sized + 'static {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError>;
 
     fn into_function(self) -> IntoFunction<Self, Args> {
@@ -1262,7 +1283,7 @@ pub trait Callable<Args>: Clone + Send + Sized + 'static {
 
 impl<F, Ret> Callable<&[ValueRef]> for F
 where
-    F: Fn(&[ValueRef]) -> Ret + Clone + Send + 'static,
+    F: Fn(&[ValueRef]) -> Ret + Clone + Send + Sync + 'static,
     Ret: IntoRet,
 {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
@@ -1272,7 +1293,7 @@ where
 
 impl<F, Ret> Callable<()> for F
 where
-    F: Fn() -> Ret + Clone + Send + 'static,
+    F: Fn() -> Ret + Clone + Send + Sync + 'static,
     Ret: IntoRet,
 {
     fn call(&mut self, args: &[ValueRef]) -> Result<Option<Value>, RuntimeError> {
@@ -1285,7 +1306,7 @@ macro_rules! impl_callable {
         #[allow(non_snake_case)]
         impl<F, Ret, $($arg,)*> Callable<($($arg,)*)> for F
         where
-            F: Fn($($arg,)*) -> Ret + Clone + Send + 'static,
+            F: Fn($($arg,)*) -> Ret + Clone + Send + Sync + 'static,
             Ret: IntoRet,
             $( $arg: FromValue + 'static, )*
         {

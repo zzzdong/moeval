@@ -1,20 +1,21 @@
 use std::{
     any::TypeId,
-    cell::{Ref, RefCell, RefMut},
     fmt::{self, Debug},
     ops::{Deref, DerefMut},
-    rc::Rc,
+    sync::Arc,
 };
+
+use bevy_utils::syncunsafecell::SyncUnsafeCell;
 
 use super::object::{Object, Undefined};
 use super::RuntimeError;
 use crate::ir::Primitive;
 
 #[derive(Debug)]
-pub struct Value(Box<dyn Object>);
+pub struct Value(Box<dyn Object + Sync + Send>);
 
 impl Value {
-    pub fn new(object: impl Object) -> Value {
+    pub fn new(object: impl Object + Sync + Send) -> Value {
         Value(Box::new(object))
     }
 
@@ -92,7 +93,7 @@ impl Default for Value {
     }
 }
 
-impl<T: Object> From<T> for Value {
+impl<T: Object + Sync + Send> From<T> for Value {
     fn from(value: T) -> Self {
         Value::new(value)
     }
@@ -121,6 +122,15 @@ impl Deref for Value {
 impl DerefMut for Value {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.0.deref_mut()
+    }
+}
+
+impl PartialEq<Undefined> for Value {
+    fn eq(&self, other: &Undefined) -> bool {
+        match self.downcast_ref::<Undefined>() {
+            Some(b) => *b == *other,
+            None => false,
+        }
     }
 }
 
@@ -160,28 +170,24 @@ impl PartialEq<String> for Value {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ValueRef(Rc<RefCell<Value>>);
+#[derive(Clone)]
+pub struct ValueRef(Arc<SyncUnsafeCell<Value>>);
 
 impl ValueRef {
     pub fn new(value: Value) -> Self {
-        ValueRef(Rc::new(RefCell::new(value)))
+        ValueRef(Arc::new(SyncUnsafeCell::new(value)))
     }
 
-    pub fn borrow(&self) -> Ref<Value> {
-        self.0.as_ref().borrow()
+    pub fn value(&self) -> &Value {
+        unsafe { &*self.0.get() }
     }
 
-    pub fn borrow_mut(&mut self) -> RefMut<Value> {
-        self.0.borrow_mut()
+    pub fn get(&self) -> &Value {
+        unsafe { &*self.0.get() }
     }
 
-    pub fn as_ptr(&self) -> *mut Value {
-        self.0.as_ptr()
-    }
-
-    pub fn take(self) -> Value {
-        self.0.take()
+    pub fn get_mut(&mut self) -> &mut Value {
+        unsafe { &mut *self.0.get() }
     }
 }
 
@@ -193,12 +199,65 @@ impl Default for ValueRef {
 
 impl fmt::Display for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.borrow().0.display().to_string())
+        f.write_str(&self.get().0.debug().to_string())
+    }
+}
+
+impl fmt::Debug for ValueRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ValueRef")
+            .field(&self.get().0.debug())
+            .finish()
     }
 }
 
 impl From<Value> for ValueRef {
     fn from(value: Value) -> Self {
         ValueRef::new(value)
+    }
+}
+
+impl PartialEq<Undefined> for ValueRef {
+    fn eq(&self, other: &Undefined) -> bool {
+        match self.get().downcast_ref::<Undefined>() {
+            Some(b) => *b == *other,
+            None => false,
+        }
+    }
+}
+
+impl PartialEq<bool> for ValueRef {
+    fn eq(&self, other: &bool) -> bool {
+        match self.get().downcast_ref::<bool>() {
+            Some(b) => *b == *other,
+            None => false,
+        }
+    }
+}
+
+impl PartialEq<i64> for ValueRef {
+    fn eq(&self, other: &i64) -> bool {
+        match self.get().downcast_ref::<i64>() {
+            Some(i) => i == other,
+            None => false,
+        }
+    }
+}
+
+impl PartialEq<f64> for ValueRef {
+    fn eq(&self, other: &f64) -> bool {
+        match self.get().downcast_ref::<f64>() {
+            Some(f) => f == other,
+            None => false,
+        }
+    }
+}
+
+impl PartialEq<String> for ValueRef {
+    fn eq(&self, other: &String) -> bool {
+        match self.get().downcast_ref::<String>() {
+            Some(s) => s == other.as_str(),
+            None => false,
+        }
     }
 }

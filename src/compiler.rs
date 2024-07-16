@@ -279,7 +279,6 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             let mut compiler = FunctionCompiler::new(&mut builder, symbols);
 
             let entry = compiler.builder.create_block(None);
-            compiler.builder.set_entry_block(entry);
             compiler.builder.switch_to_block(entry);
 
             for (idx, param) in params.iter().enumerate() {

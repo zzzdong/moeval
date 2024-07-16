@@ -1,4 +1,4 @@
-use moeval::{Environment, Evaluator, Promise, RuntimeError, Value, SyncValue, ValueRef};
+use moeval::{Environment, Evaluator, Promise, RuntimeError, Value, ValueRef};
 
 use futures::{Future, FutureExt, TryFuture, TryFutureExt};
 
@@ -35,7 +35,6 @@ fn test_simple() {
     init();
 
     let env = Environment::new();
-    let mut eval = Evaluator::new();
 
     let script = r#"
     let sum = 0;
@@ -43,7 +42,7 @@ fn test_simple() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap().unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     println!("ret: {:?}", retval);
 
@@ -53,7 +52,6 @@ fn test_simple() {
 #[test]
 fn test_eval_for_range() {
     let env = Environment::new();
-    let mut eval = Evaluator::new();
 
     let script = r#"
     let sum = 0;
@@ -63,7 +61,7 @@ fn test_eval_for_range() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap().unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 55);
 }
@@ -73,7 +71,6 @@ fn test_eval_array() {
     // init();
 
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
 
     env.define_function("println", println);
 
@@ -95,7 +92,7 @@ fn test_eval_array() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap().unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 15);
 }
@@ -103,7 +100,6 @@ fn test_eval_array() {
 #[test]
 fn test_eval_map() {
     let env = Environment::new();
-    let mut eval = Evaluator::new();
 
     let script = r#"
     let sum = 0;
@@ -115,7 +111,7 @@ fn test_eval_map() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap().unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 16);
 }
@@ -125,7 +121,6 @@ fn test_slice() {
     init();
 
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
 
     env.define_function("println", println);
 
@@ -161,7 +156,7 @@ fn test_slice() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap().unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 9);
 }
@@ -171,7 +166,7 @@ fn test_eval_for() {
     init();
 
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
+
     env.define_function("println", println);
 
     let script = r#"
@@ -191,7 +186,7 @@ fn test_eval_for() {
     }
     "#;
 
-    let retval = eval.eval(script, &env);
+    let retval = Evaluator::eval_script(script, env);
 
     assert!(retval.is_ok());
 }
@@ -199,7 +194,6 @@ fn test_eval_for() {
 #[test]
 fn test_eval_env() {
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
 
     env.define_function("fib", fib);
 
@@ -211,7 +205,7 @@ fn test_eval_env() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap();
 
     println!("ret: {:?}", retval);
 }
@@ -221,7 +215,6 @@ fn test_eval() {
     // init();
 
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
 
     env.define_function("println", println);
 
@@ -248,9 +241,27 @@ fn test_eval() {
     return sum;
     "#;
 
-    let retval = eval.eval(script, &env).unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap();
 
     println!("ret: {:?}", retval);
 
     assert_eq!(retval.unwrap(), 143);
+}
+
+#[test]
+fn test_await() {
+    let mut env = Environment::new();
+
+    let fut = Promise::new(Box::pin(async move { Value::new(101) }));
+
+    env.define_function("println", println);
+
+    let script = r#"
+        let ret = fut.await;
+        return ret;
+    "#;
+
+    let retval = Evaluator::eval_script(script, env);
+
+    assert!(retval.is_ok());
 }

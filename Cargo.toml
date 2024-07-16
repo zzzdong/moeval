@@ -1,6 +1,6 @@
 [package]
 name = "moeval"
-version = "0.1.0-alpha"
+version = "0.1.1-alpha"
 edition = "2021"
 authors = ["zzzdong <kuwater@163.com>"]
 license = "MIT"
@@ -17,6 +17,7 @@ keywords = ["eval", "interpreter"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bevy_utils = "0.14"
 futures = "0.3"
 indexmap = "2.2"
 log = "0.4"

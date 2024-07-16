@@ -1,25 +1,31 @@
-use moeval::{Environment, Evaluator, ValueRef};
+use moeval::{Environment, Evaluator, Promise, Value, ValueRef};
 
 #[tokio::main]
 async fn main() {
     let mut env = Environment::new();
-    let mut eval = Evaluator::new();
 
     env.define_function("println", println);
+    env.define_function("http_get", http_get);
 
     let script = r#"
+    println("hello, world");
+
     let sum = 0;
     for i in 0..=10 {
         sum += i;
     }
-    println("hello, world");
+    
+    let resp = http_get("https://bing.com").await;
 
-    return sum;
+    return resp;
     "#;
 
-    let retval = eval.eval(script, &env);
+    let retval = Evaluator::eval_script_async(script, env)
+        .await
+        .unwrap()
+        .unwrap();
 
-    println!("ret: {:?}", retval);
+    println!("ret: {:?}", retval.get());
 }
 
 fn println(args: &[ValueRef]) {
@@ -30,4 +36,15 @@ fn println(args: &[ValueRef]) {
         .join("");
 
     println!("{}", s);
+}
+
+fn http_get(url: String) -> Promise {
+    Promise::new(Box::pin(async move {
+        println!("url: {url:?}");
+
+        let resp = reqwest::get(url).await.unwrap();
+        let body = resp.text().await.unwrap();
+
+        Value::new(body)
+    }))
 }

@@ -38,6 +38,9 @@ pub enum RuntimeError {
     KeyNotFound {
         key: String,
     },
+    Internal {
+        message: String,
+    },
 }
 
 impl RuntimeError {
@@ -80,6 +83,12 @@ impl RuntimeError {
     pub fn key_not_found(key: impl std::fmt::Debug) -> Self {
         RuntimeError::KeyNotFound {
             key: format!("{key:?}"),
+        }
+    }
+
+    pub fn internal(message: impl ToString) -> Self {
+        RuntimeError::Internal {
+            message: message.to_string(),
         }
     }
 }
@@ -129,6 +138,7 @@ impl std::fmt::Display for RuntimeError {
                 write!(f, "Key `{}` not found", key)
             }
             RuntimeError::Overflow => write!(f, "Overflow"),
+            RuntimeError::Internal { message } => write!(f, "Internal error: {message}"),
         }
     }
 }
