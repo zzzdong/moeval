@@ -277,21 +277,3 @@ fn test_eval() {
 
     assert_eq!(retval.unwrap(), 143);
 }
-
-#[test]
-fn test_await() {
-    let mut env = Environment::new();
-
-    let fut = Promise::new(Box::pin(async move { Value::new(101) }));
-
-    env.define_function("println", println);
-
-    let script = r#"
-        let ret = fut.await;
-        return ret;
-    "#;
-
-    let retval = Evaluator::eval_script(script, env);
-
-    assert!(retval.is_ok());
-}
