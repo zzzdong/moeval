@@ -1007,13 +1007,13 @@ pub enum Range {
 impl Range {
     pub fn new(begin: ValueRef, end: ValueRef, bounded: bool) -> Result<Self, RuntimeError> {
         if bounded {
-            Self::range_inclusive(begin, end)
+            Self::inclusive(begin, end)
         } else {
-            Self::range(begin, end)
+            Self::exclusive(begin, end)
         }
     }
 
-    pub fn range(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+    pub fn exclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
         let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
 
@@ -1023,7 +1023,7 @@ impl Range {
         Ok(Range::Range { begin, end })
     }
 
-    pub fn range_inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
+    pub fn inclusive(begin: ValueRef, end: ValueRef) -> Result<Self, RuntimeError> {
         let begin = begin.get();
         let begin = begin.try_downcast_ref::<i64>().copied()?;
 

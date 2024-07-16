@@ -60,14 +60,33 @@ impl Compiler {
     }
 }
 
+struct State {
+    pub(crate) break_point: Option<BlockId>,
+    pub(crate) continue_point: Option<BlockId>,
+}
+
+impl State {
+    pub(crate) fn new() -> Self {
+        Self {
+            break_point: None,
+            continue_point: None,
+        }
+    }
+}
+
 pub struct FunctionCompiler<'short, 'long: 'short> {
     builder: &'short mut Builder<'long>,
     symbols: SymbolTable,
+    state: State,
 }
 
 impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
     pub fn new(builder: &'short mut Builder<'long>, symbols: SymbolTable) -> Self {
-        Self { builder, symbols }
+        Self {
+            builder,
+            symbols,
+            state: State::new(),
+        }
     }
 
     fn compile_toplevel(&mut self, toplevel: TopLevelItem) {
@@ -102,6 +121,12 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             }
             Statement::For(for_stmt) => {
                 self.compile_for_stmt(for_stmt);
+            }
+            Statement::Break => {
+                self.compile_break_stmt();
+            }
+            Statement::Continue => {
+                self.compile_continue_stmt();
             }
 
             _ => unimplemented!("{:?}", statement),
@@ -199,6 +224,9 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         let loop_blk = self.builder.create_block(None);
         let after_blk = self.builder.create_block(None);
 
+        self.state.break_point = Some(after_blk);
+        self.state.continue_point = Some(loop_blk);
+
         let iterable = self.compile_expression(iterable);
         let iterable = self.builder.make_iterator(iterable);
         self.builder.br(loop_blk);
@@ -220,6 +248,18 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.builder.br(loop_blk);
 
         self.builder.switch_to_block(after_blk);
+    }
+
+    fn compile_break_stmt(&mut self) {
+        if let Some(break_point) = self.state.break_point.take() {
+            self.builder.br(break_point);
+        }
+    }
+
+    fn compile_continue_stmt(&mut self) {
+        if let Some(continue_point) = self.state.continue_point.take() {
+            self.builder.br(continue_point);
+        }
     }
 
     fn compile_block(&mut self, block: Vec<Statement>) {
@@ -603,6 +643,23 @@ impl SymbolTable {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_control_flow() {
+        let inputs = [
+            "if a { b; } else { c; }",
+            "if a { b; } else if c { d; } else { e; }",
+            "if a { b; } else if c { d; } else if e { f; } else { g; }",
+            "for i in 0..10 { if i % 2 == 0 {continue;} if i % 3 == 0 {break;} }",
+        ];
+
+        let compiler = Compiler::new();
+        for input in inputs.iter() {
+            let module = compiler.compile(input).unwrap();
+            println!("============");
+            println!("{module}")
+        }
+    }
 
     #[test]
     fn test_compiler() {

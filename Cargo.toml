@@ -1,6 +1,6 @@
 [package]
 name = "moeval"
-version = "0.1.1-alpha"
+version = "0.1.0-alpha.1"
 edition = "2021"
 authors = ["zzzdong <kuwater@163.com>"]
 license = "MIT"

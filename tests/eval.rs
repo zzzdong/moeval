@@ -67,6 +67,36 @@ fn test_eval_for_range() {
 }
 
 #[test]
+fn test_eval_control_flow() {
+    init();
+
+    let mut env = Environment::new();
+
+    env.define_function("println", println);
+
+    let script = r#"
+    let sum = 0;
+    for i in 0..=10 {
+        println("i=", i);
+        if i % 2 == 0 {
+            continue;
+        }
+        sum += i;
+
+        if i == 5 {
+            break;
+        }
+        println("sum=", sum);
+    }
+    return sum;
+    "#;
+
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+
+    assert_eq!(retval, 9);
+}
+
+#[test]
 fn test_eval_array() {
     // init();
 

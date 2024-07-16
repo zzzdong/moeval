@@ -98,13 +98,6 @@ impl StackFrame {
             _ => unreachable!("Invalid address"),
         }
     }
-
-    fn take_value(&mut self, addr: Address) -> ValueRef {
-        match addr {
-            Address::Stack(index) => std::mem::take(&mut self.values[index]),
-            Address::Function(func) => ValueRef::new(Value::new(UserFunction::new(func))),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -157,13 +150,6 @@ impl Stack {
 enum ControlFlow {
     Block(BlockId),
     Return(Option<ValueRef>),
-}
-
-struct Context<'a> {
-    constants: Vec<ValueRef>,
-    stack: Stack,
-    module: &'a Module,
-    env: &'a Environment,
 }
 
 pub struct Evaluator {

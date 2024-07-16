@@ -4,7 +4,6 @@ program = { SOI ~ (statement)* ~ EOI }
 statement = {
     empty_statement
   | item_statement
-  | expression_statement
   | let_statement
   | if_statement
   | switch_statement
@@ -13,6 +12,7 @@ statement = {
   | return_statement
   | continue_statement
   | break_statement
+  | expression_statement
 }
 
 /// Empty Statment
