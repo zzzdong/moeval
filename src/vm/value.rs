@@ -35,18 +35,6 @@ impl Value {
     }
 
     pub fn try_downcast_ref<T: 'static>(&self) -> Result<&T, RuntimeError> {
-        // println!(
-        //     "type of value: {}, {:?}",
-        //     std::any::type_name::<T>(),
-        //     TypeId::of::<T>()
-        // );
-
-        // println!(
-        //     "type of self.0: {},{:?}",
-        //     std::any::type_name_of_val(&*self.0),
-        //     (&*self.0).type_id()
-        // );
-
         if TypeId::of::<T>() == (*self.0).type_id() {
             return unsafe { Ok(&*(&*self.0 as *const dyn Object as *const T)) };
         }
@@ -90,6 +78,12 @@ impl Value {
 impl Default for Value {
     fn default() -> Self {
         Value::new(Undefined)
+    }
+}
+
+impl AsRef<dyn Object> for Value {
+    fn as_ref(&self) -> &dyn Object {
+        self.0.as_ref()
     }
 }
 
@@ -199,15 +193,13 @@ impl Default for ValueRef {
 
 impl fmt::Display for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.get().0.debug().to_string())
+        self.get().debug(f)
     }
 }
 
 impl fmt::Debug for ValueRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("ValueRef")
-            .field(&self.get().0.debug())
-            .finish()
+        self.get().debug(f)
     }
 }
 
@@ -259,5 +251,14 @@ impl PartialEq<String> for ValueRef {
             Some(s) => s == other.as_str(),
             None => false,
         }
+    }
+}
+
+impl PartialEq<Value> for ValueRef {
+    fn eq(&self, other: &Value) -> bool {
+        matches!(
+            self.get().as_ref().compare(other),
+            Ok(std::cmp::Ordering::Equal)
+        )
     }
 }

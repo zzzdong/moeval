@@ -11,7 +11,7 @@ impl<'a> Builder<'a> {
         Self { context, module }
     }
 
-    pub fn flow_graph(&mut self) -> &FlowGraph {
+    pub fn flow_graph(&self) -> &FlowGraph {
         &self.context.flow_graph
     }
 
@@ -21,10 +21,7 @@ impl<'a> Builder<'a> {
 
     fn emit(&mut self, inst: Instruction) {
         self.module.emit(
-            self.context
-                .flow_graph
-                .current_block()
-                .expect("no current block"),
+            self.flow_graph().current_block().expect("no current block"),
             inst,
         );
     }

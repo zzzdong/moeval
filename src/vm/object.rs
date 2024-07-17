@@ -64,8 +64,8 @@ impl fmt::Display for OperateKind {
 }
 
 pub trait Object: std::any::Any + std::fmt::Debug {
-    fn debug(&self) -> String {
-        format!("{:?}", self)
+    fn debug(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&format!("{self:?}"))
     }
 
     /// arithmetic addition operation
@@ -464,10 +464,6 @@ impl Object for f64 {
 
 /// String
 impl Object for String {
-    fn debug(&self) -> String {
-        self.to_string()
-    }
-
     fn add(&self, other: &Value) -> Result<Value, RuntimeError> {
         let other = other.try_downcast_ref::<String>()?;
 
@@ -745,6 +741,10 @@ impl Array {
 
     pub fn len(&self) -> i64 {
         self.0.len() as i64
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

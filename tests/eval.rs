@@ -260,14 +260,11 @@ fn test_eval() {
         return fib(n - 1) + fib(n - 2);
     }
 
-    let f = fib;
-
     let sum = 0;
     for i in 1..=10 {
-        sum += f(i);
+        sum += fib(i);
     }
-    
-    println("-->", sum, !true);
+
     return sum;
     "#;
 
