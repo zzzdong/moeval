@@ -229,6 +229,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         } = for_stmt;
 
         let init = self.builder.create_block("for_init");
+        let iter_next = self.builder.create_block("iter_next");
         let iter_blk = self.builder.create_block("iterate");
         let after_blk = self.builder.create_block(None);
 
@@ -242,14 +243,17 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
 
         let iterable = self.compile_expression(iterable);
         let iterable = self.builder.make_iterator(iterable);
-        self.builder.jump(iter_blk);
+        self.builder.jump(iter_next);
         self.builder.block_add_successor(init, iter_blk);
 
-        self.builder.switch_to_block(iter_blk);
+        self.builder.switch_to_block(iter_next);
 
         let has_next = self.builder.iterator_has_next(iterable);
         self.builder.br_if(has_next, iter_blk, after_blk);
+        self.builder.block_add_successor(iter_next, iter_blk);
+        self.builder.block_add_successor(iter_next, after_blk);
 
+        self.builder.switch_to_block(iter_blk);
         let new_symbols = self.symbols.new_scope();
         let old_symbols = std::mem::replace(&mut self.symbols, new_symbols);
         let next = self.builder.iterate_next(iterable);
@@ -260,7 +264,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
         self.symbols = old_symbols;
 
-        self.builder.jump(iter_blk);
+        self.builder.jump(iter_next);
 
         self.builder.block_add_successor(iter_blk, after_blk);
         self.builder.block_add_successor(iter_blk, iter_blk);

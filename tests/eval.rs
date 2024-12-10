@@ -57,16 +57,15 @@ fn test_eval_for_range() {
 
     let script = r#"
     let sum = 0;
-    for i in 0..=1 {
+    for i in 0..=10 {
         sum += i;
     }
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
-    println!("{retval:?}");
-    // assert_eq!(retval, 55);
+    assert_eq!(retval, 55);
 }
 
 #[test]
