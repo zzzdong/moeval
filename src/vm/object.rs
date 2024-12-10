@@ -29,6 +29,7 @@ pub enum OperateKind {
     PropertySet,
     PropertyCall,
     MakeIterator,
+    IteratorHasNext,
     IterateNext,
     Display,
     TypeCast,
@@ -55,6 +56,7 @@ impl fmt::Display for OperateKind {
             OperateKind::PropertySet => write!(f, "property_set"),
             OperateKind::PropertyCall => write!(f, "property_call"),
             OperateKind::MakeIterator => write!(f, "make_iterator"),
+            OperateKind::IteratorHasNext => write!(f, "iterator_has_next"),
             OperateKind::IterateNext => write!(f, "iterate_next"),
             OperateKind::Display => write!(f, "display"),
             OperateKind::TypeCast => write!(f, "type_cast"),
@@ -204,7 +206,14 @@ pub trait Object: std::any::Any + std::fmt::Debug {
         ))
     }
 
-    fn iterate_next(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
+    fn iterator_has_next(&self) -> Result<bool, RuntimeError> {
+        Err(RuntimeError::invalid_operation(
+            OperateKind::IteratorHasNext,
+            "unimplemented",
+        ))
+    }
+
+    fn iterate_next(&mut self) -> Result<ValueRef, RuntimeError> {
         Err(RuntimeError::invalid_operation(
             OperateKind::IterateNext,
             "unimplemented",
@@ -1110,11 +1119,14 @@ impl Object for SliceIndex {}
 /// Enumerator
 pub struct Enumerator {
     iter: Box<dyn Iterator<Item = ValueRef> + Send + Sync>,
+    next: Option<ValueRef>,
 }
 
 impl Enumerator {
     pub fn new(iter: Box<dyn Iterator<Item = ValueRef> + Send + Sync>) -> Self {
-        Self { iter }
+        let mut iter = iter;
+        let next = iter.next();
+        Self { iter, next }
     }
 }
 
@@ -1125,8 +1137,14 @@ impl fmt::Debug for Enumerator {
 }
 
 impl Object for Enumerator {
-    fn iterate_next(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
-        Ok(self.iter.next())
+    fn iterate_next(&mut self) -> Result<ValueRef, RuntimeError> {
+        let old = self.next.take();
+        self.next = self.iter.next();
+        Ok(old.expect("iterator exhausted"))
+    }
+
+    fn iterator_has_next(&self) -> Result<bool, RuntimeError> {
+        Ok(self.next.is_some())
     }
 }
 

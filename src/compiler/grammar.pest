@@ -126,7 +126,7 @@ closure = { "|" ~ call_arg_list ~ "|" ~ block }
 
 /// Atom
 atom = {
-  literal
+    literal
   | identifier
   | tuple
   | array
@@ -185,7 +185,7 @@ prefix_operator = _{ not_operator | negative_operator }
 
 /// Branches or sequences.
 infix_operator = _{
-  add_assign_operator
+    add_assign_operator
   | sub_assign_operator
   | mul_assign_operator
   | div_assign_operator
@@ -330,7 +330,7 @@ mod_assign_operator = { "%=" }
 comma = { "," }
 
 /// An identifier.
-identifier = { name }
+identifier = { !keyword ~ name }
 
 ///
 name = @{ !"PUSH" ~ ("_" | alpha) ~ ("_" | alpha_num)* }
@@ -446,3 +446,5 @@ keywords = _{
   | "crate"
   | "trait"
 }
+
+keyword = @{ keywords ~ !("_" | alpha_num) }

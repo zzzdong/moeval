@@ -133,7 +133,7 @@ pub struct Block {
     pub id: BlockId,
     pub label: Name,
     pub instructions: Vec<Instruction>,
-    // pub terminator: Option<Terminator>,
+    pub successors: Vec<BlockId>,
 }
 
 impl Block {
@@ -142,12 +142,16 @@ impl Block {
             id,
             label: label.into(),
             instructions: Vec::new(),
-            // terminator: None,
+            successors: Vec::new(),
         }
     }
 
     pub fn emit(&mut self, instruction: Instruction) {
         self.instructions.push(instruction);
+    }
+
+    pub fn add_successors(&mut self, successor: BlockId) {
+        self.successors.push(successor);
     }
 }
 
@@ -325,6 +329,10 @@ impl Module {
 
         id
     }
+
+    pub fn block_add_successor(&mut self, block: BlockId, successor: BlockId) {
+        self.blocks[block.as_usize()].add_successors(successor);
+    }
 }
 
 impl fmt::Display for Module {
@@ -342,7 +350,7 @@ impl fmt::Display for Module {
             )?;
             for block in func.flow_graph.blocks.iter() {
                 let block = self.get_block(*block).unwrap();
-                writeln!(f, "block#{}:", block.id.as_usize())?;
+                writeln!(f, "block#{}@{}:", block.id.as_usize(), block.label)?;
                 for instruction in block.instructions.iter() {
                     writeln!(f, "\t{}", instruction)?;
                 }

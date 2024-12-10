@@ -46,8 +46,16 @@ impl<'a> Builder<'a> {
         blk_id
     }
 
+    pub fn current_block(&self) -> BlockId {
+        self.flow_graph().current_block().expect("no current block")
+    }
+
     pub fn switch_to_block(&mut self, block: BlockId) {
         self.flow_graph_mut().switch_to_block(block);
+    }
+
+    pub fn block_add_successor(&mut self, block: BlockId, successor: BlockId) {
+        self.module.block_add_successor(block, successor);
     }
 
     pub fn unaryop(&mut self, op: Opcode, src: Address) -> Address {
@@ -149,8 +157,8 @@ impl<'a> Builder<'a> {
         });
     }
 
-    pub fn br(&mut self, dst_blk: BlockId) {
-        self.emit(Instruction::Br { dst: dst_blk });
+    pub fn jump(&mut self, dst_blk: BlockId) {
+        self.emit(Instruction::Jump { dst: dst_blk });
     }
 
     pub fn return_(&mut self, value: Option<Address>) {
@@ -165,16 +173,22 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn iterate_next(&mut self, iter: Address, next: Address, after_blk: BlockId) -> Address {
+    pub fn iterator_has_next(&mut self, iter: Address) -> Address {
         let result = self.create_alloc();
 
+        self.emit(Instruction::IteratorHasNext { iter, result });
+
+        result
+    }
+
+    pub fn iterate_next(&mut self, iter: Address) -> Address {
+        let next = self.create_alloc();
         self.emit(Instruction::IterateNext {
             iter,
             next,
-            after_blk,
         });
 
-        result
+        next
     }
 
     pub fn range(&mut self, begin: Address, end: Address, bounded: bool) -> Address {

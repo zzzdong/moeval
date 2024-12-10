@@ -166,11 +166,18 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             else_branch,
         } = if_stmt;
 
-        let true_blk = self.builder.create_block(None);
-        let false_blk = else_branch
-            .as_ref()
-            .map(|_| self.builder.create_block(None));
+        let curr_blk = self.builder.current_block();
         let next_blk = self.builder.create_block(None);
+
+        let true_blk = self.builder.create_block(None);
+        self.builder.block_add_successor(curr_blk, true_blk);
+
+        let false_blk = else_branch.as_ref().map(|_| {
+            let blk = self.builder.create_block(None);
+            self.builder.block_add_successor(curr_blk, blk);
+
+            blk
+        });
 
         let cond = self.compile_expression(condition);
         self.builder
@@ -178,13 +185,15 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
 
         self.builder.switch_to_block(true_blk);
         self.compile_block(then_branch);
-        self.builder.br(next_blk);
+        self.builder.jump(next_blk);
+        self.builder.block_add_successor(true_blk, next_blk);
 
         if let Some(block) = else_branch {
             let else_blk = false_blk.unwrap();
             self.builder.switch_to_block(else_blk);
             self.compile_block(block);
-            self.builder.br(next_blk);
+            self.builder.jump(next_blk);
+            self.builder.block_add_successor(else_blk, next_blk);
         }
 
         self.builder.switch_to_block(next_blk);
@@ -219,25 +228,31 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             body,
         } = for_stmt;
 
-        let next = self.builder.create_alloc();
-
-        let loop_blk = self.builder.create_block(None);
+        let init = self.builder.create_block("for_init");
+        let iter_blk = self.builder.create_block("iterate");
         let after_blk = self.builder.create_block(None);
 
         self.state.break_point = Some(after_blk);
-        self.state.continue_point = Some(loop_blk);
+        self.state.continue_point = Some(iter_blk);
+
+        self.builder.jump(init);
+        self.builder.block_add_successor(self.builder.current_block(), init);
+
+        self.builder.switch_to_block(init);
 
         let iterable = self.compile_expression(iterable);
         let iterable = self.builder.make_iterator(iterable);
-        self.builder.br(loop_blk);
+        self.builder.jump(iter_blk);
+        self.builder.block_add_successor(init, iter_blk);
 
-        self.builder.switch_to_block(loop_blk);
+        self.builder.switch_to_block(iter_blk);
 
-        self.builder.iterate_next(iterable, next, after_blk);
+        let has_next = self.builder.iterator_has_next(iterable);
+        self.builder.br_if(has_next, iter_blk, after_blk);
 
         let new_symbols = self.symbols.new_scope();
         let old_symbols = std::mem::replace(&mut self.symbols, new_symbols);
-
+        let next = self.builder.iterate_next(iterable);
         self.compile_pattern(pat, next);
 
         for statement in body {
@@ -245,20 +260,23 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
         self.symbols = old_symbols;
 
-        self.builder.br(loop_blk);
+        self.builder.jump(iter_blk);
+
+        self.builder.block_add_successor(iter_blk, after_blk);
+        self.builder.block_add_successor(iter_blk, iter_blk);
 
         self.builder.switch_to_block(after_blk);
     }
 
     fn compile_break_stmt(&mut self) {
         if let Some(break_point) = self.state.break_point.take() {
-            self.builder.br(break_point);
+            self.builder.jump(break_point);
         }
     }
 
     fn compile_continue_stmt(&mut self) {
         if let Some(continue_point) = self.state.continue_point.take() {
-            self.builder.br(continue_point);
+            self.builder.jump(continue_point);
         }
     }
 

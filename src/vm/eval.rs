@@ -194,6 +194,8 @@ impl Evaluator {
         let ret = this.eval().await?;
 
         Ok(ret)
+
+        // Ok(Some(ValueRef::new(0.into())))
     }
 
     async fn eval(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
@@ -378,24 +380,24 @@ impl Evaluator {
                     self.stack
                         .store_value(result, ValueRef::new(Value::new(Enumerator::new(iterator))));
                 }
-                Instruction::IterateNext {
-                    iter,
-                    next,
-                    after_blk,
-                } => {
+                Instruction::IteratorHasNext { iter, result } => {
+                    let mut iterator = self.stack.load_value(iter);
+                    let iterator = iterator.get_mut();
+                    let enumerator = iterator.try_downcast_mut::<Enumerator>()?;
+
+                    let has_next = enumerator.iterator_has_next()?;
+
+                    self.stack
+                        .store_value(result, ValueRef::new(Value::new(has_next)));
+                }
+                Instruction::IterateNext { iter, next } => {
                     let mut iterator = self.stack.load_value(iter);
                     let iterator = iterator.get_mut();
 
                     let enumerator = iterator.try_downcast_mut::<Enumerator>()?;
 
-                    match enumerator.iterate_next()? {
-                        Some(element) => {
-                            self.stack.store_value(next, element);
-                        }
-                        None => {
-                            return Ok(ControlFlow::Block(after_blk));
-                        }
-                    }
+                    let element = enumerator.iterate_next()?;
+                    self.stack.store_value(next, element);
                 }
 
                 Instruction::NewArray { dst, size } => {
@@ -439,7 +441,7 @@ impl Evaluator {
                     object.index_set(index.get(), value)?;
                 }
 
-                Instruction::Br { dst } => {
+                Instruction::Jump { dst } => {
                     return Ok(ControlFlow::Block(dst));
                 }
                 Instruction::BrIf {

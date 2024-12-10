@@ -156,17 +156,25 @@ pub enum Instruction {
         true_blk: BlockId,
         false_blk: BlockId,
     },
-    Br {
+    Jump {
         dst: BlockId,
     },
+    /// Create an iterator from an object.
+    /// The iterator will be stored in `result`.
     MakeIterator {
         iter: Address,
         result: Address,
     },
+    /// Check if the iterator has another item.
+    IteratorHasNext {
+        iter: Address,
+        result: Address,
+    },
+    /// Get the next value from an iterator.
+    /// The next value will be stored in `next`.
     IterateNext {
         iter: Address,
         next: Address,
-        after_blk: BlockId,
     },
     Range {
         begin: Address,
@@ -273,8 +281,8 @@ impl std::fmt::Display for Instruction {
                 }
                 Ok(())
             }
-            Instruction::Br { dst } => {
-                write!(f, "br block#{}", dst.as_usize())
+            Instruction::Jump { dst } => {
+                write!(f, "jump block#{}", dst.as_usize())
             }
             Instruction::BrIf {
                 condition,
@@ -292,18 +300,11 @@ impl std::fmt::Display for Instruction {
             Instruction::MakeIterator { iter, result } => {
                 write!(f, "make_iterator {} {}", iter, result)
             }
-            Instruction::IterateNext {
-                iter,
-                next,
-                after_blk,
-            } => {
-                write!(
-                    f,
-                    "iterate_next {} {} block#{}",
-                    iter,
-                    next,
-                    after_blk.as_usize()
-                )
+            Instruction::IteratorHasNext { iter, result } => {
+                write!(f, "iterator_has_next {} {}", iter, result)
+            }
+            Instruction::IterateNext { iter, next } => {
+                write!(f, "iterate_next {} {}", iter, next,)
             }
             Instruction::Range {
                 begin,
