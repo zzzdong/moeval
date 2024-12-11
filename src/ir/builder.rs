@@ -88,6 +88,12 @@ pub trait InstBuilder {
         dst
     }
 
+    fn make_function(&mut self, func: FunctionId) -> Variable {
+        let dst = self.create_alloc();
+        self.emit(Instruction::LoadFunc { dst, src: func });
+        dst
+    }
+
     fn create_block(&mut self, label: Name) -> BlockId {
         let block = self.control_flow_graph_mut().create_block(label);
         block

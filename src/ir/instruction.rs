@@ -120,6 +120,10 @@ pub enum Instruction {
         dst: Variable,
         src: ConstantId,
     },
+    LoadFunc {
+        dst: Variable,
+        src: FunctionId,
+    },
     LoadEnv {
         dst: Variable,
         name: String,
@@ -238,6 +242,9 @@ impl std::fmt::Display for Instruction {
             }
             Instruction::LoadConst { dst, src } => {
                 write!(f, "{} = load_const #{}", dst, src.as_usize())
+            }
+            Instruction::LoadFunc { dst, src } => {
+                write!(f, "{} = load_func #{}", dst, src.as_usize())
             }
             Instruction::LoadEnv { dst, name } => {
                 write!(f, "{} = load_env @{}", dst, name)

@@ -58,16 +58,16 @@ impl Compiler {
     }
 }
 
-struct State {
-    pub(crate) break_point: Option<BlockId>,
-    pub(crate) continue_point: Option<BlockId>,
+struct LoopContext {
+    pub(crate) break_point: BlockId,
+    pub(crate) continue_point: BlockId,
 }
 
-impl State {
-    pub(crate) fn new() -> Self {
+impl LoopContext {
+    pub(crate) fn new(break_point: BlockId, continue_point: BlockId) -> Self {
         Self {
-            break_point: None,
-            continue_point: None,
+            break_point,
+            continue_point,
         }
     }
 }
@@ -75,7 +75,7 @@ impl State {
 pub struct InstCompiler<'a> {
     builder: &'a mut dyn InstBuilder,
     symbols: SymbolTable,
-    state: State,
+    loop_contexts: Vec<LoopContext>,
 }
 
 impl<'a> InstCompiler<'a> {
@@ -83,7 +83,7 @@ impl<'a> InstCompiler<'a> {
         Self {
             builder,
             symbols,
-            state: State::new(),
+            loop_contexts: Vec::new(),
         }
     }
 
@@ -221,6 +221,8 @@ impl<'a> InstCompiler<'a> {
         let loop_body = self.create_block("iterate");
         let after_blk = self.create_block(None);
 
+        self.enter_loop_context(after_blk, loop_header);
+
         self.builder.br(loop_init);
 
         // loop init, create iterator
@@ -248,20 +250,17 @@ impl<'a> InstCompiler<'a> {
 
         self.builder.br(loop_header);
 
+        self.level_loop_context();
         // after loop
         self.builder.switch_to_block(after_blk);
     }
 
     fn compile_break_stmt(&mut self) {
-        if let Some(break_point) = self.state.break_point.take() {
-            self.builder.br(break_point);
-        }
+        self.builder.br(self.loop_context().break_point);
     }
 
     fn compile_continue_stmt(&mut self) {
-        if let Some(continue_point) = self.state.continue_point.take() {
-            self.builder.br(continue_point);
-        }
+        self.builder.br(self.loop_context().continue_point);
     }
 
     fn compile_block(&mut self, block: Vec<Statement>) {
@@ -273,7 +272,7 @@ impl<'a> InstCompiler<'a> {
         self.symbols = old_symbols;
     }
 
-    fn compile_function_item(&mut self, fn_item: FunctionItem) -> FunctionId {
+    fn compile_function_item(&mut self, fn_item: FunctionItem) -> Variable {
         let FunctionItem {
             name,
             params,
@@ -289,7 +288,7 @@ impl<'a> InstCompiler<'a> {
         name: Option<String>,
         params: Vec<ast::FunctionParam>,
         body: Vec<Statement>,
-    ) -> FunctionId {
+    ) -> Variable {
         let func_sig = FuncSignature::new(
             name.clone(),
             params
@@ -298,8 +297,10 @@ impl<'a> InstCompiler<'a> {
                 .collect(),
         );
         let func_id = self.builder.module_mut().declare_function(func_sig);
+
+        let func = self.builder.make_function(func_id);
         if let Some(name) = &name {
-            self.symbols.declare(name, Symbol::new_function(func_id));
+            self.symbols.declare(name, Symbol::new_variable(func));
         }
 
         let symbols = self.symbols.new_scope();
@@ -323,7 +324,7 @@ impl<'a> InstCompiler<'a> {
             .module_mut()
             .define_function(func_id, func_control_flow_graph);
 
-        func_id
+        func
     }
 
     fn compile_expression(&mut self, expr: Expression) -> Variable {
@@ -436,7 +437,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_closure(&mut self, expr: ClosureExpression) -> FunctionId {
+    fn compile_closure(&mut self, expr: ClosureExpression) -> Variable {
         let ClosureExpression { params, body } = expr;
 
         self.compile_function(None, params, body)
@@ -593,6 +594,19 @@ impl<'a> InstCompiler<'a> {
 
     fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
         self.builder.create_block(label.into())
+    }
+
+    fn loop_context(&self) -> &LoopContext {
+        self.loop_contexts.last().expect("not in loop context")
+    }
+
+    fn enter_loop_context(&mut self, break_point: BlockId, continue_point: BlockId) {
+        self.loop_contexts
+            .push(LoopContext::new(break_point, continue_point));
+    }
+
+    fn level_loop_context(&mut self) {
+        self.loop_contexts.pop().expect("not in loop context");
     }
 }
 
