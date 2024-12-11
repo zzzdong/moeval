@@ -1,5 +1,6 @@
 use indexmap::IndexSet;
 
+use super::builder::ControlFlowGraph;
 use super::instruction::*;
 use std::fmt;
 use std::hash::Hash;
@@ -75,6 +76,8 @@ macro_rules! id_entity {
 
 id_entity!(ConstantId);
 
+id_entity!(VariableId);
+
 id_entity!(InstId);
 
 id_entity!(BlockId);
@@ -82,7 +85,7 @@ id_entity!(BlockId);
 id_entity!(FunctionId);
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Name(Option<String>);
+pub struct Name(pub(crate) Option<String>);
 
 impl Name {
     pub fn new(name: impl ToString) -> Self {
@@ -130,10 +133,11 @@ impl fmt::Display for Name {
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    pub id: BlockId,
-    pub label: Name,
-    pub instructions: Vec<Instruction>,
-    pub successors: Vec<BlockId>,
+    pub(crate) id: BlockId,
+    pub(crate) label: Name,
+    pub(crate) instructions: Vec<Instruction>,
+    pub(crate) predecessors: Vec<BlockId>,
+    pub(crate) successors: Vec<BlockId>,
 }
 
 impl Block {
@@ -142,6 +146,7 @@ impl Block {
             id,
             label: label.into(),
             instructions: Vec::new(),
+            predecessors: Vec::new(),
             successors: Vec::new(),
         }
     }
@@ -150,8 +155,12 @@ impl Block {
         self.instructions.push(instruction);
     }
 
-    pub fn add_successors(&mut self, successor: BlockId) {
+    pub fn append_successors(&mut self, successor: BlockId) {
         self.successors.push(successor);
+    }
+
+    pub fn append_predecessor(&mut self, predecessor: BlockId) {
+        self.predecessors.push(predecessor);
     }
 }
 
@@ -216,7 +225,7 @@ impl FuncSignature {
 pub struct Function {
     pub id: FunctionId,
     pub signature: FuncSignature,
-    pub flow_graph: FlowGraph,
+    pub control_flow_graph: ControlFlowGraph,
 }
 
 impl Function {
@@ -224,47 +233,36 @@ impl Function {
         Self {
             id,
             signature,
-            flow_graph: FlowGraph::default(),
-        }
-    }
-
-    pub fn entry(&self) -> Option<BlockId> {
-        self.flow_graph.entry()
-    }
-}
-
-pub struct FunctionContext {
-    pub values: Vec<Address>,
-    pub flow_graph: FlowGraph,
-}
-
-impl Default for FunctionContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl FunctionContext {
-    pub fn new() -> Self {
-        Self {
-            values: Vec::new(),
-            flow_graph: FlowGraph::new(),
+            control_flow_graph: ControlFlowGraph::new(),
         }
     }
 }
+
+// pub struct FunctionContext {
+//     pub values: Vec<Address>,
+//     pub flow_graph: FlowGraph,
+// }
+
+// impl Default for FunctionContext {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
+
+// impl FunctionContext {
+//     pub fn new() -> Self {
+//         Self {
+//             values: Vec::new(),
+//             flow_graph: FlowGraph::new(),
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Module {
     pub constants: IndexSet<Primitive>,
     pub functions: Vec<Function>,
-    pub entry: Option<FunctionId>,
-    pub blocks: Vec<Block>,
-}
-
-impl Default for Module {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub control_flow_graph: ControlFlowGraph,
 }
 
 impl Module {
@@ -272,21 +270,12 @@ impl Module {
         Self {
             constants: IndexSet::new(),
             functions: Vec::new(),
-            entry: None,
-            blocks: Vec::new(),
+            control_flow_graph: ControlFlowGraph::new(),
         }
     }
 
     pub fn get_function(&self, id: FunctionId) -> Option<&Function> {
         self.functions.get(id.as_usize())
-    }
-
-    pub fn get_block(&self, block: BlockId) -> Option<&Block> {
-        self.blocks.get(block.as_usize())
-    }
-
-    pub fn make_context(&self) -> FunctionContext {
-        FunctionContext::new()
     }
 
     pub fn make_constant(&mut self, value: Primitive) -> ConstantId {
@@ -306,32 +295,20 @@ impl Module {
         id
     }
 
-    pub fn define_function(&mut self, id: FunctionId, context: FunctionContext) {
-        let FunctionContext { flow_graph, .. } = context;
-
+    pub fn define_function(&mut self, id: FunctionId, func_control_flow_graph: ControlFlowGraph) {
         let func = &mut self.functions[id.as_usize()];
 
-        let _ = std::mem::replace(&mut func.flow_graph, flow_graph);
+        let _ = std::mem::replace(&mut func.control_flow_graph, func_control_flow_graph);
     }
 
-    pub fn set_entry(&mut self, id: FunctionId) {
-        self.entry = Some(id);
+    pub fn get_block(&self, id: BlockId) -> Option<&Block> {
+        self.control_flow_graph.blocks.get(id.as_usize())
     }
+}
 
-    pub fn emit(&mut self, block: BlockId, inst: Instruction) {
-        self.blocks[block.as_usize()].instructions.push(inst);
-    }
-
-    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
-        let id = BlockId::new(self.blocks.len());
-        let block = Block::new(id, label);
-        self.blocks.push(block);
-
-        id
-    }
-
-    pub fn block_add_successor(&mut self, block: BlockId, successor: BlockId) {
-        self.blocks[block.as_usize()].add_successors(successor);
+impl Default for Module {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -341,21 +318,28 @@ impl fmt::Display for Module {
             writeln!(f, "#{i}:\t {constant:?}")?;
         }
 
-        for func in self.functions.iter() {
-            writeln!(
-                f,
-                "function[{}]@{}()",
-                func.id.as_usize(),
-                func.signature.name
-            )?;
-            for block in func.flow_graph.blocks.iter() {
-                let block = self.get_block(*block).unwrap();
-                writeln!(f, "block#{}@{}:", block.id.as_usize(), block.label)?;
-                for instruction in block.instructions.iter() {
-                    writeln!(f, "\t{}", instruction)?;
-                }
+        for block in self.control_flow_graph.blocks.iter() {
+            writeln!(f, "block#{}@{}:", block.id.as_usize(), block.label)?;
+            for instruction in block.instructions.iter() {
+                writeln!(f, "\t{}", instruction)?;
             }
         }
+
+        // for func in self.functions.iter() {
+        //     writeln!(
+        //         f,
+        //         "function[{}]@{}()",
+        //         func.id.as_usize(),
+        //         func.signature.name
+        //     )?;
+        //     for block in func.flow_graph.blocks.iter() {
+        //         let block = self.get_block(*block).unwrap();
+        //         writeln!(f, "block#{}@{}:", block.id.as_usize(), block.label)?;
+        //         for instruction in block.instructions.iter() {
+        //             writeln!(f, "\t{}", instruction)?;
+        //         }
+        //     }
+        // }
 
         Ok(())
     }

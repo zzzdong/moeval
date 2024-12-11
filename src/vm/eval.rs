@@ -10,7 +10,7 @@ use super::value::{Value, ValueRef};
 use super::RuntimeError;
 use crate::compiler::Compiler;
 use crate::error::Error;
-use crate::ir::{Address, BlockId, FunctionId, Instruction, Module, Opcode};
+use crate::ir::{BlockId, ControlFlowGraph, FunctionId, Instruction, Module, Opcode, Variable};
 
 pub struct Environment {
     symbols: HashMap<String, ValueRef>,
@@ -72,31 +72,24 @@ impl StackFrame {
         }
     }
 
-    fn alloc(&mut self, addr: Address) -> ValueRef {
-        match addr {
-            Address::Stack(index) => {
-                if index >= self.values.len() {
-                    self.values
-                        .resize_with(index + 1, || ValueRef::new(Value::default()));
-                }
-                self.values[index].clone()
-            }
-            _ => unreachable!("Invalid address"),
+    fn alloc(&mut self, addr: Variable) -> ValueRef {
+        let index = addr.id().as_usize();
+
+        if index >= self.values.len() {
+            self.values
+                .resize_with(index + 1, || ValueRef::new(Value::default()));
         }
+        self.values[index].clone()
     }
 
-    fn load_value(&self, addr: Address) -> ValueRef {
-        match addr {
-            Address::Stack(index) => self.values[index].clone(),
-            Address::Function(func) => ValueRef::new(Value::new(UserFunction::new(func))),
-        }
+    fn load_value(&self, addr: Variable) -> ValueRef {
+        let index = addr.id().as_usize();
+        self.values[index].clone()
     }
 
-    fn store_value(&mut self, addr: Address, value: ValueRef) {
-        match addr {
-            Address::Stack(index) => self.values[index] = value,
-            _ => unreachable!("Invalid address"),
-        }
+    fn store_value(&mut self, addr: Variable, value: ValueRef) {
+        let index = addr.id().as_usize();
+        self.values[index] = value;
     }
 }
 
@@ -126,11 +119,11 @@ impl Stack {
         self.frames.last_mut()
     }
 
-    fn load_value(&self, addr: Address) -> ValueRef {
+    fn load_value(&self, addr: Variable) -> ValueRef {
         self.top().unwrap().load_value(addr)
     }
 
-    fn store_value(&mut self, addr: Address, value: ValueRef) {
+    fn store_value(&mut self, addr: Variable, value: ValueRef) {
         self.top_mut().unwrap().store_value(addr, value);
     }
 
@@ -142,7 +135,7 @@ impl Stack {
         self.top_mut().unwrap().args.push(value);
     }
 
-    fn alloc(&mut self, addr: Address) {
+    fn alloc(&mut self, addr: Variable) {
         self.top_mut().unwrap().alloc(addr);
     }
 }
@@ -199,12 +192,13 @@ impl Evaluator {
     }
 
     async fn eval(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
-        let entry = self
-            .module
-            .entry
-            .ok_or(RuntimeError::internal("No entry point".to_string()))?;
+        self.stack.alloc_frame();
 
-        let ret = self.eval_function(entry, Vec::new()).await?;
+
+        let control_flow_graph = self.module.control_flow_graph.clone();
+        let ret = self.eval_control_flow_graph(&control_flow_graph).await?;
+
+        self.stack.exit_frame();
 
         Ok(ret)
     }
@@ -214,19 +208,20 @@ impl Evaluator {
         func: FunctionId,
         args: Vec<ValueRef>,
     ) -> BoxFuture<Result<Option<ValueRef>, RuntimeError>> {
-        async move {
-            self.stack.alloc_frame();
+        unimplemented!();
+        // async move {
+        //     self.stack.alloc_frame();
 
-            for arg in args {
-                self.stack.store_argument(arg);
-            }
-            let ret = self.eval_call(func).await?;
+        //     for arg in args {
+        //         self.stack.store_argument(arg);
+        //     }
+        //     let ret = self.eval_call(func).await?;
 
-            self.stack.exit_frame();
+        //     self.stack.exit_frame();
 
-            Ok(ret)
-        }
-        .boxed()
+        //     Ok(ret)
+        // }
+        // .boxed()
     }
 
     async fn eval_block(&mut self, block: BlockId) -> Result<ControlFlow, RuntimeError> {
@@ -441,7 +436,7 @@ impl Evaluator {
                     object.index_set(index.get(), value)?;
                 }
 
-                Instruction::Jump { dst } => {
+                Instruction::Br { dst } => {
                     return Ok(ControlFlow::Block(dst));
                 }
                 Instruction::BrIf {
@@ -460,32 +455,32 @@ impl Evaluator {
                     }
                 }
 
-                Instruction::Call { func, args, result } => match func {
-                    Address::Function(id) => {
-                        self.call_function(id, args, result).await?;
-                    }
-                    Address::Stack(_) => {
-                        let mut callable = self.stack.load_value(func);
-                        let callable = callable.get_mut();
-                        // let callable = callable.deref_mut();
+                // Instruction::Call { func, args, result } => match func {
+                //     Address::Function(id) => {
+                //         self.call_function(id, args, result).await?;
+                //     }
+                //     Address::Stack(_) => {
+                //         let mut callable = self.stack.load_value(func);
+                //         let callable = callable.get_mut();
+                //         // let callable = callable.deref_mut();
 
-                        if let Some(UserFunction(id)) = callable.downcast_mut::<UserFunction>() {
-                            self.call_function(*id, args, result).await?;
-                        } else if let Some(callable) = callable.downcast_mut::<NativeFunction>() {
-                            let args: Vec<ValueRef> =
-                                args.iter().map(|arg| self.stack.load_value(*arg)).collect();
+                //         if let Some(UserFunction(id)) = callable.downcast_mut::<UserFunction>() {
+                //             self.call_function(id, args, result).await?;
+                //         } else if let Some(callable) = callable.downcast_mut::<NativeFunction>() {
+                //             let args: Vec<ValueRef> =
+                //                 args.iter().map(|arg| self.stack.load_value(*arg)).collect();
 
-                            self.stack.alloc_frame();
+                //             self.stack.alloc_frame();
 
-                            let ret = callable.call(&args)?;
+                //             let ret = callable.call(&args)?;
 
-                            self.stack.exit_frame();
-                            if let Some(ret) = ret {
-                                self.stack.store_value(result, ValueRef::new(ret));
-                            }
-                        }
-                    }
-                },
+                //             self.stack.exit_frame();
+                //             if let Some(ret) = ret {
+                //                 self.stack.store_value(result, ValueRef::new(ret));
+                //             }
+                //         }
+                //     }
+                // },
 
                 Instruction::PropertyCall {
                     object,
@@ -534,28 +529,48 @@ impl Evaluator {
         Ok(ControlFlow::Return(None))
     }
 
-    async fn call_function(
+    // async fn call_function(
+    //     &mut self,
+    //     id: FunctionId,
+    //     args: Vec<Address>,
+    //     result: Address,
+    // ) -> Result<(), RuntimeError> {
+    //     let args: Vec<ValueRef> = args.iter().map(|arg| self.stack.load_value(*arg)).collect();
+
+    //     let ret = self.eval_function(id, args).await?;
+
+    //     self.stack
+    //         .store_value(result, ret.unwrap_or(ValueRef::new(Value::default())));
+
+    //     Ok(())
+    // }
+
+    // async fn eval_call(&mut self, func: FunctionId) -> Result<Option<ValueRef>, RuntimeError> {
+    //     let func = self
+    //         .module
+    //         .get_function(func)
+    //         .ok_or(RuntimeError::symbol_not_found("function not found"))?;
+    //     let mut next_block = func.entry();
+
+    //     while let Some(block) = next_block.take() {
+    //         match self.eval_block(block).await? {
+    //             ControlFlow::Block(next) => {
+    //                 next_block = Some(next);
+    //             }
+    //             ControlFlow::Return(value) => {
+    //                 return Ok(value);
+    //             }
+    //         }
+    //     }
+
+    //     Ok(None)
+    // }
+
+    async fn eval_control_flow_graph(
         &mut self,
-        id: FunctionId,
-        args: Vec<Address>,
-        result: Address,
-    ) -> Result<(), RuntimeError> {
-        let args: Vec<ValueRef> = args.iter().map(|arg| self.stack.load_value(*arg)).collect();
-
-        let ret = self.eval_function(id, args).await?;
-
-        self.stack
-            .store_value(result, ret.unwrap_or(ValueRef::new(Value::default())));
-
-        Ok(())
-    }
-
-    async fn eval_call(&mut self, func: FunctionId) -> Result<Option<ValueRef>, RuntimeError> {
-        let func = self
-            .module
-            .get_function(func)
-            .ok_or(RuntimeError::symbol_not_found("function not found"))?;
-        let mut next_block = func.entry();
+        control_flow_graph: &ControlFlowGraph,
+    ) -> Result<Option<ValueRef>, RuntimeError> {
+        let mut next_block = control_flow_graph.entry();
 
         while let Some(block) = next_block.take() {
             match self.eval_block(block).await? {

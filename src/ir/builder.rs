@@ -1,64 +1,109 @@
 use super::instruction::*;
 use super::types::*;
 
-pub struct Builder<'a> {
-    context: &'a mut FunctionContext,
-    pub(crate) module: &'a mut Module,
+#[derive(Debug, Clone)]
+pub struct ControlFlowGraph {
+    pub(crate) blocks: Vec<Block>,
+    pub(crate) entry: Option<BlockId>,
+    pub(crate) current_block: Option<BlockId>,
+    pub(crate) variables: Vec<VariableId>,
 }
 
-impl<'a> Builder<'a> {
-    pub fn new(context: &'a mut FunctionContext, module: &'a mut Module) -> Self {
-        Self { context, module }
+impl ControlFlowGraph {
+    pub fn new() -> Self {
+        Self {
+            blocks: Vec::new(),
+            entry: None,
+            current_block: None,
+            variables: Vec::new(),
+        }
     }
 
-    pub fn flow_graph(&self) -> &FlowGraph {
-        &self.context.flow_graph
+    pub fn switch_to_block(&mut self, block: BlockId) {
+        self.current_block = Some(block);
     }
 
-    pub fn flow_graph_mut(&mut self) -> &mut FlowGraph {
-        &mut self.context.flow_graph
+    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
+        let id = BlockId::new(self.blocks.len());
+        self.blocks.push(Block::new(id, label));
+        id
+    }
+
+    pub fn entry(&self) -> Option<BlockId> {
+        self.entry
+    }
+
+    pub fn set_entry(&mut self, entry: BlockId) {
+        self.entry = Some(entry);
+    }
+
+    pub fn current_block(&self) -> Option<BlockId> {
+        self.current_block
+    }
+
+    pub fn emit(&mut self, inst: Instruction) {
+        self.blocks[self.current_block.expect("no current block").as_usize()].emit(inst);
+    }
+
+    pub fn create_variable(&mut self) -> Variable {
+        let id = VariableId::new(self.variables.len());
+        self.variables.push(id);
+        Variable::new(id)
+    }
+}
+
+impl Default for ControlFlowGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub trait InstBuilder {
+    fn module(&self) -> &Module;
+
+    fn module_mut(&mut self) -> &mut Module;
+
+    fn control_flow_graph(&self) -> &ControlFlowGraph;
+
+    fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph;
+
+    fn take_control_flow_graph(&mut self) -> ControlFlowGraph {
+        std::mem::take(self.control_flow_graph_mut())
     }
 
     fn emit(&mut self, inst: Instruction) {
-        self.module.emit(
-            self.flow_graph().current_block().expect("no current block"),
-            inst,
-        );
+        self.control_flow_graph_mut().emit(inst);
     }
 
-    pub fn make_constant(&mut self, value: Primitive) -> Address {
-        let src = self.module.make_constant(value);
+    fn create_alloc(&mut self) -> Variable {
+        let dst = self.control_flow_graph_mut().create_variable();
+        self.emit(Instruction::Alloc { dst });
+        dst
+    }
+
+    fn make_constant(&mut self, value: Primitive) -> Variable {
+        let src = self.module_mut().make_constant(value);
         let dst = self.create_alloc();
         self.emit(Instruction::LoadConst { dst, src });
         dst
     }
 
-    pub fn create_alloc(&mut self) -> Address {
-        let addr = Address::Stack(self.context.values.len());
-        self.context.values.push(addr);
-        self.emit(Instruction::Alloc { dst: addr });
-        addr
+    fn create_block(&mut self, label: Name) -> BlockId {
+        let block = self.control_flow_graph_mut().create_block(label);
+        block
     }
 
-    pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
-        let blk_id = self.module.create_block(label);
-        self.flow_graph_mut().add_block(blk_id);
-        blk_id
+    fn current_block(&self) -> BlockId {
+        self.control_flow_graph()
+            .current_block()
+            .expect("no current block")
     }
 
-    pub fn current_block(&self) -> BlockId {
-        self.flow_graph().current_block().expect("no current block")
+    fn switch_to_block(&mut self, block: BlockId) {
+        self.control_flow_graph_mut().switch_to_block(block);
     }
 
-    pub fn switch_to_block(&mut self, block: BlockId) {
-        self.flow_graph_mut().switch_to_block(block);
-    }
-
-    pub fn block_add_successor(&mut self, block: BlockId, successor: BlockId) {
-        self.module.block_add_successor(block, successor);
-    }
-
-    pub fn unaryop(&mut self, op: Opcode, src: Address) -> Address {
+    fn unaryop(&mut self, op: Opcode, src: Variable) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::UnaryOp {
@@ -70,7 +115,7 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn binop(&mut self, op: Opcode, lhs: Address, rhs: Address) -> Address {
+    fn binop(&mut self, op: Opcode, lhs: Variable, rhs: Variable) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::BinaryOp {
@@ -83,11 +128,11 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn assign(&mut self, dst: Address, src: Address) {
+    fn assign(&mut self, dst: Variable, src: Variable) {
         self.emit(Instruction::Store { dst, src })
     }
 
-    pub fn get_property(&mut self, object: Address, property: &str) -> Address {
+    fn get_property(&mut self, object: Variable, property: &str) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::PropertyGet {
@@ -99,7 +144,7 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn set_property(&mut self, object: Address, property: &str, value: Address) {
+    fn set_property(&mut self, object: Variable, property: &str, value: Variable) {
         self.emit(Instruction::PropertySet {
             object,
             property: property.to_string(),
@@ -107,12 +152,12 @@ impl<'a> Builder<'a> {
         });
     }
 
-    pub fn call_property(
+    fn call_property(
         &mut self,
-        object: Address,
+        object: Variable,
         property: String,
-        args: Vec<Address>,
-    ) -> Address {
+        args: Vec<Variable>,
+    ) -> Variable {
         let dst = self.create_alloc();
 
         self.emit(Instruction::PropertyCall {
@@ -125,7 +170,7 @@ impl<'a> Builder<'a> {
         dst
     }
 
-    pub fn load_external_variable(&mut self, name: String) -> Address {
+    fn load_external_variable(&mut self, name: String) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::LoadEnv { dst: result, name });
@@ -133,7 +178,7 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn load_argument(&mut self, index: usize) -> Address {
+    fn load_argument(&mut self, index: usize) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::LoadArg { dst: result, index });
@@ -141,7 +186,7 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn make_call(&mut self, func: Address, args: Vec<Address>) -> Address {
+    fn make_call(&mut self, func: Variable, args: Vec<Variable>) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::Call { func, args, result });
@@ -149,23 +194,22 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn br_if(&mut self, condition: Address, true_blk: BlockId, false_blk: BlockId) {
+    fn br(&mut self, dst_blk: BlockId) {
+        self.emit(Instruction::Br { dst: dst_blk });
+    }
+
+    fn br_if(&mut self, condition: Variable, true_blk: BlockId, false_blk: BlockId) {
         self.emit(Instruction::BrIf {
             condition,
             true_blk,
             false_blk,
         });
     }
-
-    pub fn jump(&mut self, dst_blk: BlockId) {
-        self.emit(Instruction::Jump { dst: dst_blk });
-    }
-
-    pub fn return_(&mut self, value: Option<Address>) {
+    fn return_(&mut self, value: Option<Variable>) {
         self.emit(Instruction::Return { value });
     }
 
-    pub fn make_iterator(&mut self, iter: Address) -> Address {
+    fn make_iterator(&mut self, iter: Variable) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::MakeIterator { iter, result });
@@ -173,7 +217,7 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn iterator_has_next(&mut self, iter: Address) -> Address {
+    fn iterator_has_next(&mut self, iter: Variable) -> Variable {
         let result = self.create_alloc();
 
         self.emit(Instruction::IteratorHasNext { iter, result });
@@ -181,17 +225,14 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn iterate_next(&mut self, iter: Address) -> Address {
+    fn iterate_next(&mut self, iter: Variable) -> Variable {
         let next = self.create_alloc();
-        self.emit(Instruction::IterateNext {
-            iter,
-            next,
-        });
+        self.emit(Instruction::IterateNext { iter, next });
 
         next
     }
 
-    pub fn range(&mut self, begin: Address, end: Address, bounded: bool) -> Address {
+    fn range(&mut self, begin: Variable, end: Variable, bounded: bool) -> Variable {
         let result = self.create_alloc();
         self.emit(Instruction::Range {
             begin,
@@ -202,30 +243,30 @@ impl<'a> Builder<'a> {
         result
     }
 
-    pub fn new_array(&mut self, size: Option<usize>) -> Address {
+    fn new_array(&mut self, size: Option<usize>) -> Variable {
         let array = self.create_alloc();
         self.emit(Instruction::NewArray { dst: array, size });
         array
     }
 
-    pub fn array_push(&mut self, array: Address, value: Address) -> Address {
+    fn array_push(&mut self, array: Variable, value: Variable) -> Variable {
         self.emit(Instruction::ArrayPush { array, value });
         array
     }
 
-    pub fn new_map(&mut self) -> Address {
+    fn new_map(&mut self) -> Variable {
         let map = self.create_alloc();
         self.emit(Instruction::NewMap { dst: map });
         map
     }
 
-    pub fn index_get(&mut self, object: Address, index: Address) -> Address {
+    fn index_get(&mut self, object: Variable, index: Variable) -> Variable {
         let dst = self.create_alloc();
         self.emit(Instruction::IndexGet { dst, object, index });
         dst
     }
 
-    pub fn index_set(&mut self, object: Address, index: Address, value: Address) {
+    fn index_set(&mut self, object: Variable, index: Variable, value: Variable) {
         self.emit(Instruction::IndexSet {
             object,
             index,
@@ -233,15 +274,67 @@ impl<'a> Builder<'a> {
         });
     }
 
-    pub fn slice(&mut self, object: Address, op: Opcode) -> Address {
+    fn slice(&mut self, object: Variable, op: Opcode) -> Variable {
         let dst = self.create_alloc();
         self.emit(Instruction::Slice { dst, object, op });
         dst
     }
+}
 
-    pub fn await_promise(&mut self, promise: Address) -> Address {
-        let dst = self.create_alloc();
-        self.emit(Instruction::Await { dst, promise });
-        dst
+#[derive(Debug)]
+pub struct ModuleBuilder<'a> {
+    module: &'a mut Module,
+}
+
+impl<'a> ModuleBuilder<'a> {
+    pub fn new(module: &'a mut Module) -> Self {
+        Self { module }
+    }
+}
+
+impl<'a> InstBuilder for ModuleBuilder<'a> {
+    fn module(&self) -> &Module {
+        &self.module
+    }
+
+    fn module_mut(&mut self) -> &mut Module {
+        &mut self.module
+    }
+
+    fn control_flow_graph(&self) -> &ControlFlowGraph {
+        &self.module.control_flow_graph
+    }
+
+    fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph {
+        &mut self.module.control_flow_graph
+    }
+}
+
+pub struct FunctionBuilder<'long, 'short: 'long> {
+    module: &'long mut Module,
+    function: &'short mut Function,
+}
+
+impl<'long, 'short: 'long> FunctionBuilder<'long, 'short> {
+    pub fn new(module: &'long mut Module, function: &'short mut Function) -> Self {
+        Self { module, function }
+    }
+}
+
+impl<'long, 'short: 'long> InstBuilder for FunctionBuilder<'long, 'short> {
+    fn module(&self) -> &Module {
+        &self.module
+    }
+
+    fn module_mut(&mut self) -> &mut Module {
+        &mut self.module
+    }
+
+    fn control_flow_graph(&self) -> &ControlFlowGraph {
+        &self.function.control_flow_graph
+    }
+
+    fn control_flow_graph_mut(&mut self) -> &mut ControlFlowGraph {
+        &mut self.function.control_flow_graph
     }
 }

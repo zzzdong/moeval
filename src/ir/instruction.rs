@@ -4,21 +4,41 @@ use std::slice::Iter;
 use super::types::*;
 
 #[derive(Debug, Clone, Copy)]
-pub enum Address {
-    /// Value on stack
-    Stack(usize),
-    /// Function
-    Function(FunctionId),
-}
+pub struct Variable(VariableId);
 
-impl fmt::Display for Address {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Address::Stack(id) => write!(f, "%{}", id),
-            Address::Function(id) => write!(f, "@{}", id.as_usize()),
-        }
+impl Variable {
+    pub fn new(id: VariableId) -> Self {
+        Variable(id)
+    }
+
+    pub fn id(&self) -> VariableId {
+        self.0
     }
 }
+
+
+impl fmt::Display for Variable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "%{}", self.0.as_usize())
+    }
+}
+
+// #[derive(Debug, Clone, Copy)]
+// pub enum Address {
+//     /// Value on stack
+//     Stack(usize),
+//     /// Function
+//     Function(FunctionId),
+// }
+
+// impl fmt::Display for Address {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Address::Stack(id) => write!(f, "%{}", id),
+//             Address::Function(id) => write!(f, "@{}", id.as_usize()),
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
@@ -39,27 +59,27 @@ pub enum Opcode {
     Neg, // eg: -1
     /// begin..end
     Range {
-        begin: Address,
-        end: Address,
+        begin: Variable,
+        end: Variable,
     },
     /// ..=
     RangeInclusive {
-        begin: Address,
-        end: Address,
+        begin: Variable,
+        end: Variable,
     },
     /// begin..
     RangeFrom {
-        begin: Address,
+        begin: Variable,
     },
     /// ..
     RangeFull,
     /// ..end
     RangeTo {
-        end: Address,
+        end: Variable,
     },
     /// ..=end
     RangeToInclusive {
-        end: Address,
+        end: Variable,
     },
 }
 
@@ -94,118 +114,118 @@ impl fmt::Display for Opcode {
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Alloc {
-        dst: Address,
+        dst: Variable,
     },
     LoadConst {
-        dst: Address,
+        dst: Variable,
         src: ConstantId,
     },
     LoadEnv {
-        dst: Address,
+        dst: Variable,
         name: String,
     },
     Store {
-        dst: Address,
-        src: Address,
+        dst: Variable,
+        src: Variable,
     },
     LoadArg {
         index: usize,
-        dst: Address,
+        dst: Variable,
     },
     UnaryOp {
         op: Opcode,
-        dst: Address,
-        src: Address,
+        dst: Variable,
+        src: Variable,
     },
     BinaryOp {
         op: Opcode,
-        dst: Address,
-        lhs: Address,
-        rhs: Address,
+        dst: Variable,
+        lhs: Variable,
+        rhs: Variable,
     },
     Await {
-        promise: Address,
-        dst: Address,
+        promise: Variable,
+        dst: Variable,
     },
     Call {
-        func: Address,
-        args: Vec<Address>,
-        result: Address,
+        func: Variable,
+        args: Vec<Variable>,
+        result: Variable,
     },
     PropertyGet {
-        dst: Address,
-        object: Address,
+        dst: Variable,
+        object: Variable,
         property: String,
     },
     PropertySet {
-        object: Address,
+        object: Variable,
         property: String,
-        value: Address,
+        value: Variable,
     },
     PropertyCall {
-        object: Address,
+        object: Variable,
         property: String,
-        args: Vec<Address>,
-        result: Address,
+        args: Vec<Variable>,
+        result: Variable,
     },
     Return {
-        value: Option<Address>,
+        value: Option<Variable>,
     },
     BrIf {
-        condition: Address,
+        condition: Variable,
         true_blk: BlockId,
         false_blk: BlockId,
     },
-    Jump {
+    Br {
         dst: BlockId,
     },
     /// Create an iterator from an object.
     /// The iterator will be stored in `result`.
     MakeIterator {
-        iter: Address,
-        result: Address,
+        iter: Variable,
+        result: Variable,
     },
     /// Check if the iterator has another item.
     IteratorHasNext {
-        iter: Address,
-        result: Address,
+        iter: Variable,
+        result: Variable,
     },
     /// Get the next value from an iterator.
     /// The next value will be stored in `next`.
     IterateNext {
-        iter: Address,
-        next: Address,
+        iter: Variable,
+        next: Variable,
     },
     Range {
-        begin: Address,
-        end: Address,
+        begin: Variable,
+        end: Variable,
         bounded: bool,
-        result: Address,
+        result: Variable,
     },
     NewArray {
-        dst: Address,
+        dst: Variable,
         size: Option<usize>,
     },
     ArrayPush {
-        array: Address,
-        value: Address,
+        array: Variable,
+        value: Variable,
     },
     NewMap {
-        dst: Address,
+        dst: Variable,
     },
     IndexGet {
-        dst: Address,
-        object: Address,
-        index: Address,
+        dst: Variable,
+        object: Variable,
+        index: Variable,
     },
     IndexSet {
-        object: Address,
-        index: Address,
-        value: Address,
+        object: Variable,
+        index: Variable,
+        value: Variable,
     },
     Slice {
-        dst: Address,
-        object: Address,
+        dst: Variable,
+        object: Variable,
         op: Opcode,
     },
 }
@@ -281,7 +301,7 @@ impl std::fmt::Display for Instruction {
                 }
                 Ok(())
             }
-            Instruction::Jump { dst } => {
+            Instruction::Br { dst } => {
                 write!(f, "jump block#{}", dst.as_usize())
             }
             Instruction::BrIf {

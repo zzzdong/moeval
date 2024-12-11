@@ -2,6 +2,6 @@ mod builder;
 mod instruction;
 mod types;
 
-pub use builder::Builder;
-pub use instruction::{Address, Instruction, Opcode};
-pub use types::{BlockId, FuncParam, FuncSignature, FunctionId, Module, Primitive};
+pub use builder::{FunctionBuilder, InstBuilder, ModuleBuilder, ControlFlowGraph};
+pub use instruction::{Instruction, Opcode, Variable};
+pub use types::{BlockId, FuncParam, FuncSignature, Function, FunctionId, Module, Name, Primitive};

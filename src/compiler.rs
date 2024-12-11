@@ -47,14 +47,12 @@ impl Compiler {
         // let ast = crate::semantics::analyze(ast)?;
 
         let mut module = Module::new();
-        let mut context = module.make_context();
-        let mut ir_builder = Builder::new(&mut context, &mut module);
 
-        let mut func_compiler = FunctionCompiler::new(&mut ir_builder, SymbolTable::new());
+        let builder: &mut dyn InstBuilder = &mut ModuleBuilder::new(&mut module);
 
-        let entry = func_compiler.compile_function_id(None, vec![], ast.stmts);
+        let mut inst_compiler = InstCompiler::new(builder, SymbolTable::new());
 
-        module.set_entry(entry);
+        inst_compiler.compile_statements(ast.stmts);
 
         Ok(module)
     }
@@ -74,14 +72,14 @@ impl State {
     }
 }
 
-pub struct FunctionCompiler<'short, 'long: 'short> {
-    builder: &'short mut Builder<'long>,
+pub struct InstCompiler<'a> {
+    builder: &'a mut dyn InstBuilder,
     symbols: SymbolTable,
     state: State,
 }
 
-impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
-    pub fn new(builder: &'short mut Builder<'long>, symbols: SymbolTable) -> Self {
+impl<'a> InstCompiler<'a> {
+    pub fn new(builder: &'a mut dyn InstBuilder, symbols: SymbolTable) -> Self {
         Self {
             builder,
             symbols,
@@ -89,14 +87,13 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_toplevel(&mut self, toplevel: TopLevelItem) {
-        match toplevel {
-            TopLevelItem::Expression(expr) => {
-                self.compile_expression(expr);
-            }
-            TopLevelItem::Statement(stmt) => {
-                self.compile_statement(stmt);
-            }
+    fn compile_statements(&mut self, stmts: Vec<Statement>) {
+        let entry = self.create_block("main");
+        self.builder.switch_to_block(entry);
+        self.builder.control_flow_graph_mut().set_entry(entry);
+
+        for stmt in stmts {
+            self.compile_statement(stmt);
         }
     }
 
@@ -136,18 +133,14 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
     fn compile_let_stmt(&mut self, let_stmt: LetStatement) {
         let LetStatement { name, ty: _, value } = let_stmt;
 
-        match value {
-            Some(expr) => {
-                let value = self.compile_expression(expr);
-                let dst = self.builder.create_alloc();
-                self.builder.assign(dst, value);
-                self.symbols.declare(&name, dst);
-            }
-            None => {
-                let dst = self.builder.create_alloc();
-                self.symbols.declare(&name, dst);
-            }
+        let dst = self.builder.create_alloc();
+
+        if let Some(value) = value {
+            let value = self.compile_expression(value);
+            self.builder.assign(dst, value);
         }
+
+        self.symbols.declare(&name, Symbol::new_variable(dst));
     }
 
     fn compile_item_stmt(&mut self, item: ItemStatement) {
@@ -167,15 +160,12 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         } = if_stmt;
 
         let curr_blk = self.builder.current_block();
-        let next_blk = self.builder.create_block(None);
+        let next_blk = self.create_block(None);
 
-        let true_blk = self.builder.create_block(None);
-        self.builder.block_add_successor(curr_blk, true_blk);
+        let true_blk = self.create_block(None);
 
         let false_blk = else_branch.as_ref().map(|_| {
-            let blk = self.builder.create_block(None);
-            self.builder.block_add_successor(curr_blk, blk);
-
+            let blk = self.create_block(None);
             blk
         });
 
@@ -185,27 +175,25 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
 
         self.builder.switch_to_block(true_blk);
         self.compile_block(then_branch);
-        self.builder.jump(next_blk);
-        self.builder.block_add_successor(true_blk, next_blk);
+        self.builder.br(next_blk);
 
         if let Some(block) = else_branch {
             let else_blk = false_blk.unwrap();
             self.builder.switch_to_block(else_blk);
             self.compile_block(block);
-            self.builder.jump(next_blk);
-            self.builder.block_add_successor(else_blk, next_blk);
+            self.builder.br(next_blk);
         }
 
         self.builder.switch_to_block(next_blk);
     }
 
-    fn compile_pattern(&mut self, pat: Pattern, value: Address) {
+    fn compile_pattern(&mut self, pat: Pattern, value: Variable) {
         match pat {
             Pattern::Wildcard => {}
             Pattern::Identifier(ident) => {
                 let dst = self.builder.create_alloc();
                 self.builder.assign(dst, value);
-                self.symbols.declare(&ident, dst);
+                self.symbols.declare(&ident, Symbol::new_variable(dst));
             }
 
             Pattern::Tuple(pats) => {
@@ -228,32 +216,26 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             body,
         } = for_stmt;
 
-        let init = self.builder.create_block("for_init");
-        let iter_next = self.builder.create_block("iter_next");
-        let iter_blk = self.builder.create_block("iterate");
-        let after_blk = self.builder.create_block(None);
+        let loop_init = self.create_block("loop_init");
+        let loop_header = self.create_block("loop_header");
+        let loop_body = self.create_block("iterate");
+        let after_blk = self.create_block(None);
 
-        self.state.break_point = Some(after_blk);
-        self.state.continue_point = Some(iter_blk);
+        self.builder.br(loop_init);
 
-        self.builder.jump(init);
-        self.builder.block_add_successor(self.builder.current_block(), init);
-
-        self.builder.switch_to_block(init);
-
+        // loop init, create iterator
+        self.builder.switch_to_block(loop_init);
         let iterable = self.compile_expression(iterable);
         let iterable = self.builder.make_iterator(iterable);
-        self.builder.jump(iter_next);
-        self.builder.block_add_successor(init, iter_blk);
+        self.builder.br(loop_header);
 
-        self.builder.switch_to_block(iter_next);
-
+        // loop header, check if iterator has next
+        self.builder.switch_to_block(loop_header);
         let has_next = self.builder.iterator_has_next(iterable);
-        self.builder.br_if(has_next, iter_blk, after_blk);
-        self.builder.block_add_successor(iter_next, iter_blk);
-        self.builder.block_add_successor(iter_next, after_blk);
+        self.builder.br_if(has_next, loop_body, after_blk);
 
-        self.builder.switch_to_block(iter_blk);
+        // loop body, get next value
+        self.builder.switch_to_block(loop_body);
         let new_symbols = self.symbols.new_scope();
         let old_symbols = std::mem::replace(&mut self.symbols, new_symbols);
         let next = self.builder.iterate_next(iterable);
@@ -264,23 +246,21 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
         self.symbols = old_symbols;
 
-        self.builder.jump(iter_next);
+        self.builder.br(loop_header);
 
-        self.builder.block_add_successor(iter_blk, after_blk);
-        self.builder.block_add_successor(iter_blk, iter_blk);
-
+        // after loop
         self.builder.switch_to_block(after_blk);
     }
 
     fn compile_break_stmt(&mut self) {
         if let Some(break_point) = self.state.break_point.take() {
-            self.builder.jump(break_point);
+            self.builder.br(break_point);
         }
     }
 
     fn compile_continue_stmt(&mut self) {
         if let Some(continue_point) = self.state.continue_point.take() {
-            self.builder.jump(continue_point);
+            self.builder.br(continue_point);
         }
     }
 
@@ -293,7 +273,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.symbols = old_symbols;
     }
 
-    fn compile_function_item(&mut self, fn_item: FunctionItem) -> Address {
+    fn compile_function_item(&mut self, fn_item: FunctionItem) -> FunctionId {
         let FunctionItem {
             name,
             params,
@@ -309,16 +289,6 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         name: Option<String>,
         params: Vec<ast::FunctionParam>,
         body: Vec<Statement>,
-    ) -> Address {
-        let id = self.compile_function_id(name, params, body);
-        Address::Function(id)
-    }
-
-    fn compile_function_id(
-        &mut self,
-        name: Option<String>,
-        params: Vec<ast::FunctionParam>,
-        body: Vec<Statement>,
     ) -> FunctionId {
         let func_sig = FuncSignature::new(
             name.clone(),
@@ -327,40 +297,36 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
                 .map(|p| FuncParam::new(p.name.clone()))
                 .collect(),
         );
-        let func_id = self.builder.module.declare_function(func_sig);
+        let func_id = self.builder.module_mut().declare_function(func_sig);
         if let Some(name) = &name {
-            self.symbols.declare(name, Address::Function(func_id));
+            self.symbols.declare(name, Symbol::new_function(func_id));
         }
 
         let symbols = self.symbols.new_scope();
 
-        let context = {
-            let mut context = self.builder.module.make_context();
-            let mut builder = Builder::new(&mut context, self.builder.module);
+        let mut func_compiler = InstCompiler::new(self.builder, symbols);
 
-            let mut compiler = FunctionCompiler::new(&mut builder, symbols);
+        for (idx, param) in params.iter().enumerate() {
+            let arg = func_compiler.builder.load_argument(idx);
+            func_compiler
+                .symbols
+                .declare(param.name.as_str(), Symbol::new_variable(arg));
+        }
 
-            let entry = compiler.builder.create_block(None);
-            compiler.builder.switch_to_block(entry);
+        for stmt in body {
+            func_compiler.compile_statement(stmt);
+        }
 
-            for (idx, param) in params.iter().enumerate() {
-                let arg = compiler.builder.load_argument(idx);
-                compiler.symbols.declare(param.name.as_str(), arg);
-            }
+        let func_control_flow_graph = func_compiler.builder.take_control_flow_graph();
 
-            for stmt in body {
-                compiler.compile_statement(stmt);
-            }
-
-            context
-        };
-
-        self.builder.module.define_function(func_id, context);
+        self.builder
+            .module_mut()
+            .define_function(func_id, func_control_flow_graph);
 
         func_id
     }
 
-    fn compile_expression(&mut self, expr: Expression) -> Address {
+    fn compile_expression(&mut self, expr: Expression) -> Variable {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
@@ -373,7 +339,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
             Expression::Member(member) => self.compile_get_property(member),
             Expression::Call(call) => self.compile_call(call),
             Expression::Assign(assign) => self.compile_assign(assign),
-            Expression::Closure(closure) => self.compile_closure(closure),
+            // Expression::Closure(closure) => self.compile_closure(closure),
             Expression::Array(array) => self.compile_array(array),
             Expression::Index(index) => self.compile_index(index),
             Expression::Map(map) => self.compile_map(map),
@@ -383,7 +349,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_get_property(&mut self, expr: MemberExpression) -> Address {
+    fn compile_get_property(&mut self, expr: MemberExpression) -> Variable {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -391,7 +357,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.builder.get_property(object, &property)
     }
 
-    fn compile_set_property(&mut self, expr: MemberExpression, value: Address) {
+    fn compile_set_property(&mut self, expr: MemberExpression, value: Variable) {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -399,10 +365,10 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.builder.set_property(object, &property, value)
     }
 
-    fn compile_call(&mut self, expr: CallExpression) -> Address {
+    fn compile_call(&mut self, expr: CallExpression) -> Variable {
         let CallExpression { func, args } = expr;
 
-        let args: Vec<Address> = args
+        let args: Vec<Variable> = args
             .into_iter()
             .map(|arg| self.compile_expression(arg))
             .collect();
@@ -423,7 +389,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_assign(&mut self, expr: AssignExpression) -> Address {
+    fn compile_assign(&mut self, expr: AssignExpression) -> Variable {
         let AssignExpression { object, value, op } = expr;
 
         let value = self.compile_expression(*value);
@@ -470,13 +436,13 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_closure(&mut self, expr: ClosureExpression) -> Address {
+    fn compile_closure(&mut self, expr: ClosureExpression) -> FunctionId {
         let ClosureExpression { params, body } = expr;
 
         self.compile_function(None, params, body)
     }
 
-    fn compile_array(&mut self, expr: ArrayExpression) -> Address {
+    fn compile_array(&mut self, expr: ArrayExpression) -> Variable {
         let ArrayExpression(elements) = expr;
         let array = self.builder.new_array(Some(elements.len()));
 
@@ -488,7 +454,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         array
     }
 
-    fn compile_map(&mut self, expr: MapExpression) -> Address {
+    fn compile_map(&mut self, expr: MapExpression) -> Variable {
         let MapExpression(elements) = expr;
         let map = self.builder.new_map();
 
@@ -501,13 +467,15 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         map
     }
 
-    fn compile_await(&mut self, expr: Expression) -> Address {
-        let promise = self.compile_expression(expr);
+    fn compile_await(&mut self, expr: Expression) -> Variable {
+        unimplemented!();
 
-        self.builder.await_promise(promise)
+        // let promise = self.compile_expression(expr);
+
+        // self.builder.await_promise(promise)
     }
 
-    fn compile_index(&mut self, expr: IndexExpression) -> Address {
+    fn compile_index(&mut self, expr: IndexExpression) -> Variable {
         let IndexExpression { object, index } = expr;
 
         let object = self.compile_expression(*object);
@@ -532,7 +500,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_slice(&mut self, expr: SliceExpression) -> Address {
+    fn compile_slice(&mut self, expr: SliceExpression) -> Variable {
         let SliceExpression {
             object,
             range,
@@ -559,7 +527,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.builder.slice(object, op)
     }
 
-    fn compile_literal(&mut self, literal: LiteralExpression) -> Address {
+    fn compile_literal(&mut self, literal: LiteralExpression) -> Variable {
         let value = match literal {
             LiteralExpression::Boolean(b) => Primitive::Boolean(b),
             LiteralExpression::Integer(i) => Primitive::Integer(i),
@@ -571,18 +539,19 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         self.builder.make_constant(value)
     }
 
-    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> Address {
+    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> Variable {
         match self.symbols.get(&identifier.0) {
-            Some(value) => value,
+            Some(value) => value.as_variable(),
             None => {
                 let value = self.builder.load_external_variable(identifier.0.clone());
-                self.symbols.declare(&identifier.0, value);
+                self.symbols
+                    .declare(&identifier.0, Symbol::new_variable(value));
                 value
             }
         }
     }
 
-    fn compile_unary(&mut self, op: PrefixOp, expr: Expression) -> Address {
+    fn compile_unary(&mut self, op: PrefixOp, expr: Expression) -> Variable {
         let rhs = self.compile_expression(expr);
 
         match op {
@@ -591,7 +560,7 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> Address {
+    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> Variable {
         let lhs = self.compile_expression(lhs);
         let rhs = self.compile_expression(rhs);
 
@@ -616,17 +585,44 @@ impl<'short, 'long: 'short> FunctionCompiler<'short, 'long> {
         }
     }
 
-    fn compile_range(&mut self, lhs: Expression, rhs: Expression, bounded: bool) -> Address {
+    fn compile_range(&mut self, lhs: Expression, rhs: Expression, bounded: bool) -> Variable {
         let begin = self.compile_expression(lhs);
         let end = self.compile_expression(rhs);
         self.builder.range(begin, end, bounded)
+    }
+
+    fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
+        self.builder.create_block(label.into())
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Symbol {
+    Variable(Variable),
+    Function(FunctionId),
+}
+
+impl Symbol {
+    pub fn new_variable(value: Variable) -> Symbol {
+        Symbol::Variable(value)
+    }
+
+    pub fn new_function(value: FunctionId) -> Symbol {
+        Symbol::Function(value)
+    }
+
+    pub fn as_variable(&self) -> Variable {
+        match self {
+            Symbol::Variable(value) => *value,
+            _ => panic!("not a variable"),
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct SymbolNode {
     parent: Option<SymbolTable>,
-    symbols: BTreeMap<String, Address>,
+    symbols: BTreeMap<String, Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -640,7 +636,7 @@ impl SymbolTable {
         })))
     }
 
-    fn get(&self, name: &str) -> Option<Address> {
+    fn get(&self, name: &str) -> Option<Symbol> {
         if let Some(value) = self.0.borrow().symbols.get(name) {
             return Some(*value);
         }
@@ -650,7 +646,7 @@ impl SymbolTable {
         None
     }
 
-    fn declare(&mut self, name: impl Into<String>, value: Address) {
+    fn declare(&mut self, name: impl Into<String>, value: Symbol) {
         self.0.borrow_mut().symbols.insert(name.into(), value);
     }
 
