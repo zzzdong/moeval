@@ -46,13 +46,24 @@ impl Compiler {
         // // 语义分析
         // let ast = crate::semantics::analyze(ast)?;
 
-        let mut module = Module::new();
+        let mut inst = Inst::new();
 
-        let builder: &mut dyn InstBuilder = &mut ModuleBuilder::new(&mut module);
+        let builder: &mut dyn InstBuilder = &mut ModuleBuilder::new(&mut inst);
+
+        let entry = builder.create_block("__entry".into());
+        builder.switch_to_block(entry);
 
         let mut inst_compiler = InstCompiler::new(builder, SymbolTable::new());
 
         inst_compiler.compile_statements(ast.stmts);
+
+        let mut pass_manager = InstPassManager::new();
+
+        pass_manager.add_pass(SimplifyPass::new());
+
+        let inst = pass_manager.run(inst);
+
+        let module = inst.into_module(None);
 
         Ok(module)
     }
@@ -90,7 +101,7 @@ impl<'a> InstCompiler<'a> {
     fn compile_statements(&mut self, stmts: Vec<Statement>) {
         let entry = self.create_block("main");
         self.builder.switch_to_block(entry);
-        self.builder.control_flow_graph_mut().set_entry(entry);
+        self.builder.set_entry(entry);
 
         for stmt in stmts {
             self.compile_statement(stmt);
@@ -159,35 +170,32 @@ impl<'a> InstCompiler<'a> {
             else_branch,
         } = if_stmt;
 
-        let curr_blk = self.builder.current_block();
-        let next_blk = self.create_block(None);
-
-        let true_blk = self.create_block(None);
-
-        let false_blk = else_branch.as_ref().map(|_| {
-            let blk = self.create_block(None);
+        let merge_blk = self.create_block("if_merge");
+        let then_blk = self.create_block("if_then");
+        let else_blk = else_branch.as_ref().map(|_| {
+            let blk = self.create_block("if_else");
             blk
         });
 
         let cond = self.compile_expression(condition);
         self.builder
-            .br_if(cond, true_blk, false_blk.unwrap_or(next_blk));
+            .br_if(cond, then_blk, else_blk.unwrap_or(merge_blk));
 
-        self.builder.switch_to_block(true_blk);
+        self.builder.switch_to_block(then_blk);
         self.compile_block(then_branch);
-        self.builder.br(next_blk);
+        self.builder.br(merge_blk);
 
         if let Some(block) = else_branch {
-            let else_blk = false_blk.unwrap();
+            let else_blk = else_blk.unwrap();
             self.builder.switch_to_block(else_blk);
             self.compile_block(block);
-            self.builder.br(next_blk);
+            self.builder.br(merge_blk);
         }
 
-        self.builder.switch_to_block(next_blk);
+        self.builder.switch_to_block(merge_blk);
     }
 
-    fn compile_pattern(&mut self, pat: Pattern, value: Variable) {
+    fn compile_pattern(&mut self, pat: Pattern, value: Operand) {
         match pat {
             Pattern::Wildcard => {}
             Pattern::Identifier(ident) => {
@@ -272,7 +280,7 @@ impl<'a> InstCompiler<'a> {
         self.symbols = old_symbols;
     }
 
-    fn compile_function_item(&mut self, fn_item: FunctionItem) -> Variable {
+    fn compile_function_item(&mut self, fn_item: FunctionItem) -> Operand {
         let FunctionItem {
             name,
             params,
@@ -288,7 +296,9 @@ impl<'a> InstCompiler<'a> {
         name: Option<String>,
         params: Vec<ast::FunctionParam>,
         body: Vec<Statement>,
-    ) -> Variable {
+    ) -> Operand {
+        let curr = self.builder.current_block();
+
         let func_sig = FuncSignature::new(
             name.clone(),
             params
@@ -296,16 +306,19 @@ impl<'a> InstCompiler<'a> {
                 .map(|p| FuncParam::new(p.name.clone()))
                 .collect(),
         );
-        let func_id = self.builder.module_mut().declare_function(func_sig);
+        let func_id = self.builder.module_mut().declare_function(func_sig.clone());
 
-        let func = self.builder.make_function(func_id);
-        if let Some(name) = &name {
-            self.symbols.declare(name, Symbol::new_variable(func));
-        }
+        let mut func = Function::new(func_id, func_sig);
 
         let symbols = self.symbols.new_scope();
 
-        let mut func_compiler = InstCompiler::new(self.builder, symbols);
+        let mut func_builder = FunctionBuilder::new(self.builder.module_mut(), &mut func);
+
+        let mut func_compiler = InstCompiler::new(&mut func_builder, symbols);
+
+        let entry = func_compiler.create_block(name);
+        func_compiler.builder.set_entry(entry);
+        func_compiler.builder.switch_to_block(entry);
 
         for (idx, param) in params.iter().enumerate() {
             let arg = func_compiler.builder.load_argument(idx);
@@ -318,16 +331,17 @@ impl<'a> InstCompiler<'a> {
             func_compiler.compile_statement(stmt);
         }
 
-        let func_control_flow_graph = func_compiler.builder.take_control_flow_graph();
+        // append return instruction
+        func_compiler.builder.return_(None);
 
-        self.builder
-            .module_mut()
-            .define_function(func_id, func_control_flow_graph);
+        self.builder.module_mut().define_function(func_id, func);
 
-        func
+        self.builder.switch_to_block(curr);
+
+        Operand::Function(func_id)
     }
 
-    fn compile_expression(&mut self, expr: Expression) -> Variable {
+    fn compile_expression(&mut self, expr: Expression) -> Operand {
         match expr {
             Expression::Literal(literal) => self.compile_literal(literal),
             Expression::Identifier(identifier) => self.compile_identifier(identifier),
@@ -340,7 +354,7 @@ impl<'a> InstCompiler<'a> {
             Expression::Member(member) => self.compile_get_property(member),
             Expression::Call(call) => self.compile_call(call),
             Expression::Assign(assign) => self.compile_assign(assign),
-            // Expression::Closure(closure) => self.compile_closure(closure),
+            Expression::Closure(closure) => self.compile_closure(closure),
             Expression::Array(array) => self.compile_array(array),
             Expression::Index(index) => self.compile_index(index),
             Expression::Map(map) => self.compile_map(map),
@@ -350,7 +364,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_get_property(&mut self, expr: MemberExpression) -> Variable {
+    fn compile_get_property(&mut self, expr: MemberExpression) -> Operand {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -358,7 +372,7 @@ impl<'a> InstCompiler<'a> {
         self.builder.get_property(object, &property)
     }
 
-    fn compile_set_property(&mut self, expr: MemberExpression, value: Variable) {
+    fn compile_set_property(&mut self, expr: MemberExpression, value: Operand) {
         let MemberExpression { object, property } = expr;
 
         let object = self.compile_expression(*object);
@@ -366,10 +380,10 @@ impl<'a> InstCompiler<'a> {
         self.builder.set_property(object, &property, value)
     }
 
-    fn compile_call(&mut self, expr: CallExpression) -> Variable {
+    fn compile_call(&mut self, expr: CallExpression) -> Operand {
         let CallExpression { func, args } = expr;
 
-        let args: Vec<Variable> = args
+        let args: Vec<Operand> = args
             .into_iter()
             .map(|arg| self.compile_expression(arg))
             .collect();
@@ -390,7 +404,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_assign(&mut self, expr: AssignExpression) -> Variable {
+    fn compile_assign(&mut self, expr: AssignExpression) -> Operand {
         let AssignExpression { object, value, op } = expr;
 
         let value = self.compile_expression(*value);
@@ -437,13 +451,13 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_closure(&mut self, expr: ClosureExpression) -> Variable {
+    fn compile_closure(&mut self, expr: ClosureExpression) -> Operand {
         let ClosureExpression { params, body } = expr;
 
         self.compile_function(None, params, body)
     }
 
-    fn compile_array(&mut self, expr: ArrayExpression) -> Variable {
+    fn compile_array(&mut self, expr: ArrayExpression) -> Operand {
         let ArrayExpression(elements) = expr;
         let array = self.builder.new_array(Some(elements.len()));
 
@@ -455,7 +469,7 @@ impl<'a> InstCompiler<'a> {
         array
     }
 
-    fn compile_map(&mut self, expr: MapExpression) -> Variable {
+    fn compile_map(&mut self, expr: MapExpression) -> Operand {
         let MapExpression(elements) = expr;
         let map = self.builder.new_map();
 
@@ -468,15 +482,13 @@ impl<'a> InstCompiler<'a> {
         map
     }
 
-    fn compile_await(&mut self, expr: Expression) -> Variable {
-        unimplemented!();
+    fn compile_await(&mut self, expr: Expression) -> Operand {
+        let promise = self.compile_expression(expr);
 
-        // let promise = self.compile_expression(expr);
-
-        // self.builder.await_promise(promise)
+        self.builder.await_promise(promise)
     }
 
-    fn compile_index(&mut self, expr: IndexExpression) -> Variable {
+    fn compile_index(&mut self, expr: IndexExpression) -> Operand {
         let IndexExpression { object, index } = expr;
 
         let object = self.compile_expression(*object);
@@ -501,7 +513,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_slice(&mut self, expr: SliceExpression) -> Variable {
+    fn compile_slice(&mut self, expr: SliceExpression) -> Operand {
         let SliceExpression {
             object,
             range,
@@ -528,7 +540,7 @@ impl<'a> InstCompiler<'a> {
         self.builder.slice(object, op)
     }
 
-    fn compile_literal(&mut self, literal: LiteralExpression) -> Variable {
+    fn compile_literal(&mut self, literal: LiteralExpression) -> Operand {
         let value = match literal {
             LiteralExpression::Boolean(b) => Primitive::Boolean(b),
             LiteralExpression::Integer(i) => Primitive::Integer(i),
@@ -540,19 +552,31 @@ impl<'a> InstCompiler<'a> {
         self.builder.make_constant(value)
     }
 
-    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> Variable {
+    fn compile_identifier(&mut self, identifier: IdentifierExpression) -> Operand {
         match self.symbols.get(&identifier.0) {
             Some(value) => value.as_variable(),
             None => {
-                let value = self.builder.load_external_variable(identifier.0.clone());
-                self.symbols
-                    .declare(&identifier.0, Symbol::new_variable(value));
-                value
+                // find func first
+                match self
+                    .builder
+                    .module()
+                    .functions
+                    .iter()
+                    .find(|func| func.signature.name == Name::from(identifier.0.clone()))
+                {
+                    Some(func) => Operand::Function(func.id),
+                    None => {
+                        let value = self.builder.load_external_variable(identifier.0.clone());
+                        self.symbols
+                            .declare(&identifier.0, Symbol::new_variable(value));
+                        value
+                    }
+                }
             }
         }
     }
 
-    fn compile_unary(&mut self, op: PrefixOp, expr: Expression) -> Variable {
+    fn compile_unary(&mut self, op: PrefixOp, expr: Expression) -> Operand {
         let rhs = self.compile_expression(expr);
 
         match op {
@@ -561,7 +585,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> Variable {
+    fn compile_binary(&mut self, op: BinOp, lhs: Expression, rhs: Expression) -> Operand {
         let lhs = self.compile_expression(lhs);
         let rhs = self.compile_expression(rhs);
 
@@ -586,7 +610,7 @@ impl<'a> InstCompiler<'a> {
         }
     }
 
-    fn compile_range(&mut self, lhs: Expression, rhs: Expression, bounded: bool) -> Variable {
+    fn compile_range(&mut self, lhs: Expression, rhs: Expression, bounded: bool) -> Operand {
         let begin = self.compile_expression(lhs);
         let end = self.compile_expression(rhs);
         self.builder.range(begin, end, bounded)
@@ -612,12 +636,12 @@ impl<'a> InstCompiler<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Symbol {
-    Variable(Variable),
+    Variable(Operand),
     Function(FunctionId),
 }
 
 impl Symbol {
-    pub fn new_variable(value: Variable) -> Symbol {
+    pub fn new_variable(value: Operand) -> Symbol {
         Symbol::Variable(value)
     }
 
@@ -625,7 +649,7 @@ impl Symbol {
         Symbol::Function(value)
     }
 
-    pub fn as_variable(&self) -> Variable {
+    pub fn as_variable(&self) -> Operand {
         match self {
             Symbol::Variable(value) => *value,
             _ => panic!("not a variable"),

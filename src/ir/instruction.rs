@@ -4,41 +4,71 @@ use std::slice::Iter;
 use super::types::*;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Variable(VariableId);
+pub enum Operand {
+    /// A variable
+    Variable(VariableId),
+    /// A function
+    Function(FunctionId),
+    /// A block
+    Block(BlockId),
+    /// A constant
+    Constant(ConstantId),
+    /// A br offset
+    Offset(usize),
+}
 
-impl Variable {
+impl Operand {
     pub fn new(id: VariableId) -> Self {
-        Variable(id)
+        Operand::Variable(id)
     }
 
     pub fn id(&self) -> VariableId {
-        self.0
+        match self {
+            Operand::Variable(id) => *id,
+            _ => panic!("Variable::id() called on non-variable({self:?})"),
+        }
+    }
+
+    pub fn as_block(&self) -> Option<BlockId> {
+        match self {
+            Operand::Block(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    pub fn as_function(&self) -> Option<FunctionId> {
+        match self {
+            Operand::Function(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    pub fn as_constant(&self) -> Option<ConstantId> {
+        match self {
+            Operand::Constant(id) => Some(*id),
+            _ => None,
+        }
+    }
+
+    pub fn as_offset(&self) -> Option<usize> {
+        match self {
+            Operand::Offset(offset) => Some(*offset),
+            _ => None,
+        }
     }
 }
 
-
-impl fmt::Display for Variable {
+impl fmt::Display for Operand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "%{}", self.0.as_usize())
+        match self {
+            Operand::Variable(id) => write!(f, "%{}", id.as_usize()),
+            Operand::Function(id) => write!(f, "@{}", id.as_usize()),
+            Operand::Block(id) => write!(f, "@block{}", id.as_usize()),
+            Operand::Constant(id) => write!(f, "#{}", id.as_usize()),
+            Operand::Offset(offset) => write!(f, ">{}", offset),
+        }
     }
 }
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum Address {
-//     /// Value on stack
-//     Stack(usize),
-//     /// Function
-//     Function(FunctionId),
-// }
-
-// impl fmt::Display for Address {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         match self {
-//             Address::Stack(id) => write!(f, "%{}", id),
-//             Address::Function(id) => write!(f, "@{}", id.as_usize()),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Opcode {
@@ -59,27 +89,27 @@ pub enum Opcode {
     Neg, // eg: -1
     /// begin..end
     Range {
-        begin: Variable,
-        end: Variable,
+        begin: Operand,
+        end: Operand,
     },
     /// ..=
     RangeInclusive {
-        begin: Variable,
-        end: Variable,
+        begin: Operand,
+        end: Operand,
     },
     /// begin..
     RangeFrom {
-        begin: Variable,
+        begin: Operand,
     },
     /// ..
     RangeFull,
     /// ..end
     RangeTo {
-        end: Variable,
+        end: Operand,
     },
     /// ..=end
     RangeToInclusive {
-        end: Variable,
+        end: Operand,
     },
 }
 
@@ -114,122 +144,118 @@ impl fmt::Display for Opcode {
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Alloc {
-        dst: Variable,
+        dst: Operand,
     },
     LoadConst {
-        dst: Variable,
-        src: ConstantId,
-    },
-    LoadFunc {
-        dst: Variable,
-        src: FunctionId,
+        dst: Operand,
+        src: Operand,
     },
     LoadEnv {
-        dst: Variable,
-        name: String,
+        dst: Operand,
+        name: Operand,
     },
     Store {
-        dst: Variable,
-        src: Variable,
+        dst: Operand,
+        src: Operand,
     },
     LoadArg {
         index: usize,
-        dst: Variable,
+        dst: Operand,
     },
     UnaryOp {
         op: Opcode,
-        dst: Variable,
-        src: Variable,
+        dst: Operand,
+        src: Operand,
     },
     BinaryOp {
         op: Opcode,
-        dst: Variable,
-        lhs: Variable,
-        rhs: Variable,
+        dst: Operand,
+        lhs: Operand,
+        rhs: Operand,
     },
     Await {
-        promise: Variable,
-        dst: Variable,
+        promise: Operand,
+        dst: Operand,
     },
     Call {
-        func: Variable,
-        args: Vec<Variable>,
-        result: Variable,
+        func: Operand,
+        args: Vec<Operand>,
+        result: Operand,
     },
     PropertyGet {
-        dst: Variable,
-        object: Variable,
+        dst: Operand,
+        object: Operand,
         property: String,
     },
     PropertySet {
-        object: Variable,
+        object: Operand,
         property: String,
-        value: Variable,
+        value: Operand,
     },
     PropertyCall {
-        object: Variable,
+        object: Operand,
         property: String,
-        args: Vec<Variable>,
-        result: Variable,
+        args: Vec<Operand>,
+        result: Operand,
     },
     Return {
-        value: Option<Variable>,
+        value: Option<Operand>,
     },
     BrIf {
-        condition: Variable,
-        true_blk: BlockId,
-        false_blk: BlockId,
+        condition: Operand,
+        true_blk: Operand,
+        false_blk: Operand,
     },
     Br {
-        dst: BlockId,
+        dst: Operand,
     },
     /// Create an iterator from an object.
     /// The iterator will be stored in `result`.
     MakeIterator {
-        iter: Variable,
-        result: Variable,
+        iter: Operand,
+        result: Operand,
     },
     /// Check if the iterator has another item.
     IteratorHasNext {
-        iter: Variable,
-        result: Variable,
+        iter: Operand,
+        result: Operand,
     },
     /// Get the next value from an iterator.
     /// The next value will be stored in `next`.
     IterateNext {
-        iter: Variable,
-        next: Variable,
+        iter: Operand,
+        next: Operand,
     },
     Range {
-        begin: Variable,
-        end: Variable,
+        begin: Operand,
+        end: Operand,
         bounded: bool,
-        result: Variable,
+        result: Operand,
     },
     NewArray {
-        dst: Variable,
+        dst: Operand,
         size: Option<usize>,
     },
     ArrayPush {
-        array: Variable,
-        value: Variable,
+        array: Operand,
+        value: Operand,
     },
     NewMap {
-        dst: Variable,
+        dst: Operand,
     },
     IndexGet {
-        dst: Variable,
-        object: Variable,
-        index: Variable,
+        dst: Operand,
+        object: Operand,
+        index: Operand,
     },
     IndexSet {
-        object: Variable,
-        index: Variable,
-        value: Variable,
+        object: Operand,
+        index: Operand,
+        value: Operand,
     },
     Slice {
-        dst: Variable,
-        object: Variable,
+        dst: Operand,
+        object: Operand,
         op: Opcode,
     },
 }
@@ -241,10 +267,7 @@ impl std::fmt::Display for Instruction {
                 write!(f, "{} = alloc", dst)
             }
             Instruction::LoadConst { dst, src } => {
-                write!(f, "{} = load_const #{}", dst, src.as_usize())
-            }
-            Instruction::LoadFunc { dst, src } => {
-                write!(f, "{} = load_func #{}", dst, src.as_usize())
+                write!(f, "{} = load_const {}", dst, src)
             }
             Instruction::LoadEnv { dst, name } => {
                 write!(f, "{} = load_env @{}", dst, name)
@@ -309,20 +332,14 @@ impl std::fmt::Display for Instruction {
                 Ok(())
             }
             Instruction::Br { dst } => {
-                write!(f, "jump block#{}", dst.as_usize())
+                write!(f, "br {}", dst)
             }
             Instruction::BrIf {
                 condition,
                 true_blk,
                 false_blk,
             } => {
-                write!(
-                    f,
-                    "br_if {} block#{} block#{}",
-                    condition,
-                    true_blk.as_usize(),
-                    false_blk.as_usize()
-                )
+                write!(f, "br_if {} {} {}", condition, true_blk, false_blk)
             }
             Instruction::MakeIterator { iter, result } => {
                 write!(f, "make_iterator {} {}", iter, result)
@@ -374,47 +391,5 @@ impl std::fmt::Display for Instruction {
                 write!(f, "{} = slice {} {}", dst, object, op)
             }
         }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Instructions {
-    pub instructions: Vec<Instruction>,
-}
-
-impl Instructions {
-    pub fn new() -> Self {
-        Self {
-            instructions: Vec::new(),
-        }
-    }
-
-    pub fn emit(&mut self, instruction: Instruction) -> InstId {
-        let id = InstId::new(self.instructions.len());
-        self.instructions.push(instruction);
-        id
-    }
-
-    pub fn extend(&mut self, other: Instructions) {
-        for inst in other.instructions {
-            self.emit(inst);
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.instructions.len()
-    }
-
-    pub fn iter(&self) -> Iter<Instruction> {
-        self.instructions.iter()
-    }
-}
-
-impl IntoIterator for Instructions {
-    type Item = Instruction;
-    type IntoIter = std::vec::IntoIter<Instruction>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.instructions.into_iter()
     }
 }

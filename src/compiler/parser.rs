@@ -676,8 +676,8 @@ mod test {
     #[test]
     fn test_await() {
         let input = r#"
-            let if_a = http_request("https://www.baidu.com").await?;
-            let if = http_request("https://www.baidu.com").await?;
+            let a = http_request("https://www.baidu.com").await?;
+            let b = http_request("https://www.baidu.com").await?;
         "#;
 
         let pairs = PestParser::parse(Rule::program, input);

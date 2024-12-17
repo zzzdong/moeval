@@ -20,10 +20,7 @@ async fn main() {
     return resp;
     "#;
 
-    let retval = Evaluator::eval_script_async(script, env)
-        .await
-        .unwrap()
-        .unwrap();
+    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
 
     println!("ret: {:?}", retval.get());
 }

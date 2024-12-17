@@ -4,9 +4,11 @@ mod eval;
 mod object;
 mod value;
 
-pub use eval::{Environment, Evaluator};
+pub use eval::{Environment, Evaluator, Interpreter};
 pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple};
 pub use value::{Value, ValueRef};
+
+use crate::ir::Operand;
 
 #[derive(Debug)]
 pub enum RuntimeError {
@@ -40,6 +42,9 @@ pub enum RuntimeError {
     },
     Internal {
         message: String,
+    },
+    InvalidOperand {
+        operand: Operand,
     },
 }
 
@@ -91,6 +96,10 @@ impl RuntimeError {
             message: message.to_string(),
         }
     }
+
+    pub fn invalid_operand(operand: Operand) -> Self {
+        RuntimeError::InvalidOperand { operand }
+    }
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -139,6 +148,9 @@ impl std::fmt::Display for RuntimeError {
             }
             RuntimeError::Overflow => write!(f, "Overflow"),
             RuntimeError::Internal { message } => write!(f, "Internal error: {message}"),
+            RuntimeError::InvalidOperand { operand } => {
+                write!(f, "Invalid operand: {operand:?}")
+            }
         }
     }
 }

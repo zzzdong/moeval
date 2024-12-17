@@ -1,4 +1,4 @@
-use moeval::{Environment, Evaluator, Promise, RuntimeError, Value, ValueRef};
+use moeval::{Environment, Evaluator, Interpreter, Promise, RuntimeError, Value, ValueRef};
 
 use futures::{Future, FutureExt, TryFuture, TryFutureExt};
 
@@ -225,6 +225,8 @@ fn test_eval_for() {
 
 #[test]
 fn test_eval_env() {
+    init_logger();
+
     let mut env = Environment::new();
 
     env.define_function("fib", fib);
@@ -237,14 +239,14 @@ fn test_eval_env() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap();
 
     println!("ret: {:?}", retval);
 }
 
 #[test]
 fn test_eval() {
-    // init();
+    // init_logger();
 
     let mut env = Environment::new();
 
@@ -262,15 +264,17 @@ fn test_eval() {
         return fib(n - 1) + fib(n - 2);
     }
 
+    let f = fib;
+
     let sum = 0;
     for i in 1..=10 {
-        sum += fib(i);
+        sum += f(i);
     }
 
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap();
 
     println!("ret: {:?}", retval);
 
