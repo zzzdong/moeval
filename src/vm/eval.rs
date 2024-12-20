@@ -106,7 +106,6 @@ impl Stack {
     }
 
     fn alloc_frame(&mut self) {
-        log::debug!("alloc frame");
         self.frames.push(StackFrame::new());
     }
 
@@ -131,20 +130,10 @@ impl Stack {
     }
 
     fn load_argument(&self, index: usize) -> ValueRef {
-        log::debug!(
-            "stack_depth: {} load argument {:?}",
-            self.frames.len(),
-            index
-        );
         self.top().unwrap().args[index].clone()
     }
 
     fn store_argument(&mut self, value: ValueRef) {
-        log::debug!(
-            "stack_depth: {} store argument: {:?}",
-            self.frames.len(),
-            value
-        );
         self.top_mut().unwrap().args.push(value);
     }
 
@@ -197,30 +186,36 @@ impl Interpreter {
     }
 
     pub fn eval_script(script: &str, env: Environment) -> Result<Option<ValueRef>, Error> {
+        futures::executor::block_on(Self::eval_script_async(script, env))
+    }
+
+    pub async fn eval_script_async(script: &str, env: Environment) -> Result<Option<ValueRef>, Error> {
         let compiler = Compiler::new();
 
         let module = compiler.compile(script)?;
 
-        log::debug!("module {module}");
+        log::trace!("module {module}");
 
         let mut interpreter = Interpreter::new(module, env);
 
-        let ret = interpreter.run()?;
+        let ret = interpreter.run().await?;
 
         Ok(ret)
     }
 
-    pub fn run(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
+    pub async fn run(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
         self.stack.alloc_frame();
 
         loop {
-            let inst = self.instructions.get(self.pc);
+            let inst = match self.instructions.get(self.pc).cloned() {
+                Some(inst) => inst,
+                None => return Ok(None),
+            };
 
-            log::debug!("inst: {:04}-{inst:?}", self.pc);
-
-            let inst = inst.clone();
+            log::trace!("running: {:08}-{inst:?}", self.pc);
 
             match inst {
+                Instruction::Halt => return Ok(None),
                 Instruction::Alloc { dst } => {
                     self.stack.alloc(dst);
                 }
@@ -451,15 +446,16 @@ impl Interpreter {
                     }
                 }
                 Instruction::Call { func, args, result } => match func {
-                    Operand::Offset(offset) => {
+                    Operand::Location(offset) => {
                         self.call_function(func, &args, result)?;
                         continue;
                     }
                     Operand::Variable(_) => {
                         let mut func = self.stack.load_value(func);
                         let callable = func.get_mut();
-                        if let Some(CallOffset(offset)) = callable.downcast_mut::<CallOffset>() {
-                            self.call_function(Operand::Offset(*offset), &args, result)?;
+                        if let Some(CallLocation(offset)) = callable.downcast_mut::<CallLocation>()
+                        {
+                            self.call_function(Operand::Location(*offset), &args, result)?;
                             continue;
                         } else if let Some(callable) =
                             func.get_mut().downcast_mut::<NativeFunction>()
@@ -521,25 +517,11 @@ impl Interpreter {
                     }
                 }
                 Instruction::Await { promise, dst } => {
-                    let promise = self.stack.load_value(promise);
-
-                    let mut promise = promise.clone();
-
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-
-                    tokio::spawn(async move {
-                        let promise = promise.get_mut();
-                        let promise = promise.try_downcast_mut::<Promise>().unwrap();
-                        let ret = promise.await;
-                        let _ = tx.send(ret);
-                    });
-
-                    match rx.blocking_recv() {
-                        Ok(result) => {
-                            self.stack.store_value(dst, result.into());
-                        }
-                        Err(e) => return Err(RuntimeError::internal("await failed")),
-                    }
+                    let mut promise = self.stack.load_value(promise);
+                    let promise = promise.get_mut();
+                    let promise = promise.try_downcast_mut::<Promise>().unwrap();
+                    let ret = promise.await;
+                    self.stack.store_value(dst, ret.into());
                 }
                 _ => unimplemented!("unimplemented: {inst:?}"),
             }
@@ -573,7 +555,7 @@ impl Interpreter {
         match addr {
             Operand::Constant(const_id) => Ok(self.constants[const_id.as_usize()].clone()),
             Operand::Variable(_) => Ok(self.stack.load_value(addr)),
-            Operand::Offset(offset) => Ok(ValueRef::new(CallOffset(offset).into())),
+            Operand::Location(offset) => Ok(ValueRef::new(CallLocation(offset).into())),
             _ => Err(RuntimeError::invalid_operand(addr)),
         }
     }
@@ -622,9 +604,9 @@ impl Evaluator {
 
         let module = compiler.compile(script)?;
 
-        log::debug!("module {module}");
+        log::trace!("module {module}");
 
-        unimplemented!();
+        unimplemented!()
 
         // let mut this = Evaluator::new(module, env);
 
@@ -697,7 +679,7 @@ impl Evaluator {
         for inst in instructions {
             let inst = inst.clone();
 
-            log::debug!("inst: {inst:?}");
+            log::trace!("running: {inst:?}");
 
             match inst {
                 Instruction::Alloc { dst } => {

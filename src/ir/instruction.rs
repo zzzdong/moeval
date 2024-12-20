@@ -1,5 +1,4 @@
-use core::fmt;
-use std::slice::Iter;
+use std::fmt;
 
 use super::types::*;
 
@@ -13,8 +12,8 @@ pub enum Operand {
     Block(BlockId),
     /// A constant
     Constant(ConstantId),
-    /// A br offset
-    Offset(usize),
+    /// A br location
+    Location(usize),
 }
 
 impl Operand {
@@ -52,7 +51,7 @@ impl Operand {
 
     pub fn as_offset(&self) -> Option<usize> {
         match self {
-            Operand::Offset(offset) => Some(*offset),
+            Operand::Location(offset) => Some(*offset),
             _ => None,
         }
     }
@@ -65,7 +64,7 @@ impl fmt::Display for Operand {
             Operand::Function(id) => write!(f, "@{}", id.as_usize()),
             Operand::Block(id) => write!(f, "@block{}", id.as_usize()),
             Operand::Constant(id) => write!(f, "#{}", id.as_usize()),
-            Operand::Offset(offset) => write!(f, ">{}", offset),
+            Operand::Location(offset) => write!(f, ">{}", offset),
         }
     }
 }
@@ -258,6 +257,7 @@ pub enum Instruction {
         object: Operand,
         op: Opcode,
     },
+    Halt,
 }
 
 impl std::fmt::Display for Instruction {
@@ -390,6 +390,7 @@ impl std::fmt::Display for Instruction {
             Instruction::Slice { dst, object, op } => {
                 write!(f, "{} = slice {} {}", dst, object, op)
             }
+            Instruction::Halt => write!(f, "halt"),
         }
     }
 }

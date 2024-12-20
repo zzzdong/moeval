@@ -63,6 +63,8 @@ impl Compiler {
 
         let inst = pass_manager.run(inst);
 
+        log::trace!("{}", inst);
+
         let module = inst.into_module(None);
 
         Ok(module)
@@ -106,6 +108,9 @@ impl<'a> InstCompiler<'a> {
         for stmt in stmts {
             self.compile_statement(stmt);
         }
+
+        // FIXME: This is a hack to make block not empty.
+        self.builder.make_halt();
     }
 
     fn compile_statement(&mut self, statement: Statement) {

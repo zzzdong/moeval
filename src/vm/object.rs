@@ -1175,17 +1175,17 @@ impl fmt::Debug for Promise {
 
 impl Object for Promise {}
 
-/// CallOffset
+/// CallLocation
 #[derive(Debug)]
-pub struct CallOffset(pub(crate) usize);
+pub struct CallLocation(pub(crate) usize);
 
-impl CallOffset {
-    pub fn new(offset: usize) -> CallOffset {
-        CallOffset(offset)
+impl CallLocation {
+    pub fn new(offset: usize) -> CallLocation {
+        CallLocation(offset)
     }
 }
 
-impl Object for CallOffset {}
+impl Object for CallLocation {}
 
 /// UserFunction
 #[derive(Debug)]

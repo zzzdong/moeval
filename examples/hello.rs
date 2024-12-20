@@ -1,4 +1,4 @@
-use moeval::{Environment, Evaluator, Promise, Value, ValueRef};
+use moeval::{Environment, Evaluator, Interpreter, Promise, Value, ValueRef};
 
 #[tokio::main]
 async fn main() {
@@ -20,7 +20,7 @@ async fn main() {
     return resp;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     println!("ret: {:?}", retval.get());
 }

@@ -1,14 +1,13 @@
 use indexmap::IndexSet;
-use petgraph::algo::kosaraju_scc;
-use petgraph::graph::NodeIndex;
+use petgraph::algo::{kosaraju_scc, toposort};
+use petgraph::graph::{self, DiGraph};
+use petgraph::visit::{DfsPostOrder, IntoNodeIdentifiers};
 
 use super::builder::ControlFlowGraph;
 use super::instruction::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
-
-use petgraph::{algo::toposort, Directed, Graph};
 
 #[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
 pub enum Primitive {
@@ -141,8 +140,6 @@ pub struct Block {
     pub(crate) id: BlockId,
     pub(crate) label: Name,
     pub(crate) instructions: Vec<Instruction>,
-    pub(crate) predecessors: HashSet<BlockId>,
-    pub(crate) successors: HashSet<BlockId>,
 }
 
 impl Block {
@@ -151,21 +148,11 @@ impl Block {
             id,
             label: label.into(),
             instructions: Vec::new(),
-            predecessors: HashSet::new(),
-            successors: HashSet::new(),
         }
     }
 
     pub fn emit(&mut self, instruction: Instruction) {
         self.instructions.push(instruction);
-    }
-
-    pub fn append_successor(&mut self, successor: BlockId) {
-        self.successors.insert(successor);
-    }
-
-    pub fn append_predecessor(&mut self, predecessor: BlockId) {
-        self.predecessors.insert(predecessor);
     }
 }
 
@@ -210,8 +197,8 @@ impl Instructions {
         self.instructions.push(inst);
     }
 
-    pub fn get(&self, index: usize) -> &Instruction {
-        &self.instructions[index]
+    pub fn get(&self, index: usize) -> Option<&Instruction> {
+        self.instructions.get(index)
     }
 
     pub fn iter(&self) -> std::slice::Iter<Instruction> {
@@ -221,7 +208,7 @@ impl Instructions {
 
 fn rewrite_block_operand(operand: Operand, block_map: &HashMap<BlockId, usize>) -> Operand {
     match operand {
-        Operand::Block(block_id) => Operand::Offset(block_map[&block_id]),
+        Operand::Block(block_id) => Operand::Location(block_map[&block_id]),
         _ => operand,
     }
 }
@@ -396,7 +383,7 @@ fn rewrite_function_address_operand(
     match operand {
         Operand::Function(func_id) => {
             if let Some(offset) = func_offset_map.get(&func_id) {
-                return Operand::Offset(*offset);
+                return Operand::Location(*offset);
             } else {
                 panic!("Function ID not found in offset map");
             }
@@ -429,7 +416,7 @@ fn rewrite_inst_function_address(
 fn rewrite_br_offset(inst: Instruction, offset: usize) -> Instruction {
     match inst {
         Instruction::Br { dst } => Instruction::Br {
-            dst: Operand::Offset(dst.as_offset().expect("expected offset") + offset),
+            dst: Operand::Location(dst.as_offset().expect("expected offset") + offset),
         },
         Instruction::BrIf {
             condition,
@@ -437,8 +424,8 @@ fn rewrite_br_offset(inst: Instruction, offset: usize) -> Instruction {
             false_blk,
         } => Instruction::BrIf {
             condition,
-            true_blk: Operand::Offset(true_blk.as_offset().expect("expected offset") + offset),
-            false_blk: Operand::Offset(false_blk.as_offset().expect("expected offset") + offset),
+            true_blk: Operand::Location(true_blk.as_offset().expect("expected offset") + offset),
+            false_blk: Operand::Location(false_blk.as_offset().expect("expected offset") + offset),
         },
         _ => inst,
     }
@@ -483,70 +470,99 @@ impl fmt::Display for Inst {
 }
 
 fn sort_graph_blocks(control_flow_graph: &ControlFlowGraph) -> Vec<Block> {
-    let mut graph = Graph::<(), (), Directed>::new();
-    let mut node_map = HashMap::new();
+    let graph = &control_flow_graph.graph;
+    let entry = control_flow_graph.entry().expect("no entry block");
+    let start = control_flow_graph.block_node_map[&entry];
 
-    // 创建图节点
-    for block in &control_flow_graph.blocks {
-        let node = graph.add_node(());
-        node_map.insert(block.id, node);
+    let mut dfs = DfsPostOrder::new(graph, start);
+
+    let mut sorted = Vec::new();
+
+    while let Some(node) = dfs.next(graph) {
+        let block_id = graph[node];
+        sorted.push(block_id);
     }
 
-    // 添加边
-    for block in &control_flow_graph.blocks {
-        for successor in &block.successors {
-            if let Some(&src_node) = node_map.get(&block.id) {
-                if let Some(&dst_node) = node_map.get(successor) {
-                    graph.add_edge(src_node, dst_node, ());
-                }
-            }
-        }
-    }
+    sorted.reverse();
 
-    // 深度优先搜索并记录逆后序遍历
-    let mut visited = HashSet::new();
-    let mut post_order = Vec::new();
+    println!("sorted blocks: {:?}", sorted);
 
-    fn dfs(
-        node: NodeIndex,
-        graph: &Graph<(), (), Directed>,
-        visited: &mut HashSet<NodeIndex>,
-        post_order: &mut Vec<NodeIndex>,
-    ) {
-        if visited.contains(&node) {
-            return;
-        }
-        visited.insert(node);
-
-        for neighbor in graph.neighbors_directed(node, petgraph::Direction::Outgoing) {
-            dfs(neighbor, graph, visited, post_order);
-        }
-
-        post_order.push(node);
-    }
-
-    // 找到 entry 块并开始 DFS
-    if let Some(entry_id) = control_flow_graph.entry {
-        if let Some(&entry_node) = node_map.get(&entry_id) {
-            dfs(entry_node, &graph, &mut visited, &mut post_order);
-        }
-    }
-
-    // 将 post_order 转换为 Block 顺序
-    let mut sorted_blocks = Vec::new();
-    for &node in post_order.iter().rev() {
-        if let Some(block_id) = node_map
-            .iter()
-            .find_map(|(&k, &v)| if v == node { Some(k) } else { None })
-        {
-            if let Some(block) = control_flow_graph.blocks.iter().find(|b| b.id == block_id) {
-                sorted_blocks.push(block.clone());
-            }
-        }
-    }
-
-    sorted_blocks
+    sorted
+        .into_iter()
+        .map(|block_id| {
+            let block = control_flow_graph
+                .get_block(block_id)
+                .expect("no such block");
+            block.clone()
+        })
+        .collect()
 }
+
+// fn sort_graph_blocks(control_flow_graph: &ControlFlowGraph) -> Vec<Block> {
+//     let mut graph = Graph::<(), (), Directed>::new();
+//     let mut node_map = HashMap::new();
+
+//     // 创建图节点
+//     for block in &control_flow_graph.blocks {
+//         let node = graph.add_node(());
+//         node_map.insert(block.id, node);
+//     }
+
+//     // 添加边
+//     for block in &control_flow_graph.blocks {
+//         for successor in &block.successors {
+//             if let Some(&src_node) = node_map.get(&block.id) {
+//                 if let Some(&dst_node) = node_map.get(successor) {
+//                     graph.add_edge(src_node, dst_node, ());
+//                 }
+//             }
+//         }
+//     }
+
+//     // 深度优先搜索并记录逆后序遍历
+//     let mut visited = HashSet::new();
+//     let mut post_order = Vec::new();
+
+//     fn dfs(
+//         node: NodeIndex,
+//         graph: &Graph<(), (), Directed>,
+//         visited: &mut HashSet<NodeIndex>,
+//         post_order: &mut Vec<NodeIndex>,
+//     ) {
+//         if visited.contains(&node) {
+//             return;
+//         }
+//         visited.insert(node);
+
+//         for neighbor in graph.neighbors_directed(node, petgraph::Direction::Outgoing) {
+//             dfs(neighbor, graph, visited, post_order);
+//         }
+
+//         post_order.push(node);
+//     }
+
+//     // 找到 entry 块并开始 DFS
+//     if let Some(entry_id) = control_flow_graph.entry {
+//         if let Some(&entry_node) = node_map.get(&entry_id) {
+//             dfs(entry_node, &graph, &mut visited, &mut post_order);
+//         }
+//     }
+
+//     // 将 post_order 转换为 Block 顺序
+//     let mut sorted_blocks = Vec::new();
+//     for &node in post_order.iter().rev() {
+//         if let Some(block_id) = node_map
+//             .iter()
+//             .find_map(|(&k, &v)| if v == node { Some(k) } else { None })
+//         {
+//             if let Some(block) = control_flow_graph.blocks.iter().find(|b| b.id == block_id) {
+//                 sorted_blocks.push(block.clone());
+//             }
+//         }
+//     }
+
+//     sorted_blocks
+// }
 
 pub struct Module {
     pub name: Name,
@@ -570,11 +586,11 @@ impl Module {
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, constant) in self.constants.iter().enumerate() {
-            writeln!(f, "#{i}:\t {constant:?}")?;
+            writeln!(f, "#{i:08}:\t {constant:?}")?;
         }
 
         for (i, instruction) in self.instructions.iter().enumerate() {
-            writeln!(f, "{i:04}:\t {instruction}")?;
+            writeln!(f, "{i:08}:\t {instruction}")?;
         }
 
         Ok(())

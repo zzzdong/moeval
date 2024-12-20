@@ -1,3 +1,8 @@
+use std::collections::HashMap;
+
+use petgraph::graph::DiGraph;
+use petgraph::graph::NodeIndex;
+
 use super::instruction::*;
 use super::types::*;
 
@@ -7,6 +12,8 @@ pub struct ControlFlowGraph {
     pub(crate) entry: Option<BlockId>,
     pub(crate) current_block: Option<BlockId>,
     pub(crate) variables: Vec<VariableId>,
+    pub(crate) graph: DiGraph<BlockId, Instruction>,
+    pub(crate) block_node_map: HashMap<BlockId, NodeIndex>,
 }
 
 impl ControlFlowGraph {
@@ -16,6 +23,8 @@ impl ControlFlowGraph {
             entry: None,
             current_block: None,
             variables: Vec::new(),
+            graph: DiGraph::new(),
+            block_node_map: HashMap::new(),
         }
     }
 
@@ -26,6 +35,8 @@ impl ControlFlowGraph {
     pub fn create_block(&mut self, label: impl Into<Name>) -> BlockId {
         let id = BlockId::new(self.blocks.len());
         self.blocks.push(Block::new(id, label));
+        let node = self.graph.add_node(id);
+        self.block_node_map.insert(id, node);
         id
     }
 
@@ -47,8 +58,7 @@ impl ControlFlowGraph {
                 let curr = self.current_block.expect("no current block");
                 let dst = dst.as_block().expect("not a block");
 
-                self.block_append_predecessor(dst, curr);
-                self.block_append_successor(curr, dst);
+                self.block_append_successor(curr, dst, inst.clone());
             }
             Instruction::BrIf {
                 true_blk,
@@ -59,10 +69,8 @@ impl ControlFlowGraph {
                 let then_blk = true_blk.as_block().expect("not a block");
                 let else_blk = false_blk.as_block().expect("not a block");
 
-                self.block_append_predecessor(then_blk, curr);
-                self.block_append_predecessor(else_blk, curr);
-                self.block_append_successor(curr, then_blk);
-                self.block_append_successor(curr, else_blk);
+                self.block_append_successor(curr, then_blk, inst.clone());
+                self.block_append_successor(curr, else_blk, inst.clone());
             }
             _ => {}
         }
@@ -83,20 +91,12 @@ impl ControlFlowGraph {
         self.blocks.get(id.as_usize())
     }
 
-    fn block_append_successor(&mut self, block: BlockId, successors: BlockId) {
-        let block = self
-            .blocks
-            .get_mut(block.as_usize())
-            .expect("no such block");
-        block.append_successor(successors);
-    }
-
-    fn block_append_predecessor(&mut self, block: BlockId, predecessors: BlockId) {
-        let block = self
-            .blocks
-            .get_mut(block.as_usize())
-            .expect("no such block");
-        block.append_predecessor(predecessors);
+    fn block_append_successor(&mut self, block: BlockId, successors: BlockId, inst: Instruction) {
+        self.graph.add_edge(
+            self.block_node_map[&block],
+            self.block_node_map[&successors],
+            inst,
+        );
     }
 }
 
@@ -121,6 +121,10 @@ pub trait InstBuilder {
 
     fn emit(&mut self, inst: Instruction) {
         self.control_flow_graph_mut().emit(inst);
+    }
+
+    fn make_halt(&mut self) {
+        self.emit(Instruction::Halt);
     }
 
     fn create_alloc(&mut self) -> Operand {

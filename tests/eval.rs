@@ -1,6 +1,4 @@
-use moeval::{Environment, Evaluator, Interpreter, Promise, RuntimeError, Value, ValueRef};
-
-use futures::{Future, FutureExt, TryFuture, TryFutureExt};
+use moeval::{Environment, Interpreter, ValueRef};
 
 fn init_logger() {
     let _ = env_logger::builder()
@@ -42,7 +40,7 @@ fn test_simple() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     println!("ret: {:?}", retval);
 
@@ -63,7 +61,7 @@ fn test_eval_for_range() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 55);
 }
@@ -93,7 +91,7 @@ fn test_eval_control_flow() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 9);
 }
@@ -124,7 +122,7 @@ fn test_eval_array() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 15);
 }
@@ -143,7 +141,7 @@ fn test_eval_map() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 16);
 }
@@ -188,7 +186,7 @@ fn test_slice() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap().unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
 
     assert_eq!(retval, 9);
 }
@@ -218,7 +216,7 @@ fn test_eval_for() {
     }
     "#;
 
-    let retval = Evaluator::eval_script(script, env);
+    let retval = Interpreter::eval_script(script, env);
 
     assert!(retval.is_ok());
 }
