@@ -254,6 +254,23 @@ impl PartialEq<String> for ValueRef {
     }
 }
 
+impl PartialEq<str> for ValueRef {
+    fn eq(&self, other: &str) -> bool {
+        match self.get().downcast_ref::<String>() {
+            Some(s) => s == other,
+            None => false,
+        }
+    }
+}
+impl PartialEq<&str> for ValueRef {
+    fn eq(&self, other: &&str) -> bool {
+        match self.get().downcast_ref::<String>() {
+            Some(s) => s == other,
+            None => false,
+        }
+    }
+}
+
 impl PartialEq<Value> for ValueRef {
     fn eq(&self, other: &Value) -> bool {
         matches!(

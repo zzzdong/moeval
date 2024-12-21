@@ -85,8 +85,14 @@ impl StackFrame {
     }
 
     fn load_value(&self, addr: Operand) -> ValueRef {
-        let index = addr.id().as_usize();
-        self.values[index].clone()
+        match addr {
+            Operand::Variable(var) => {
+                let index = var.as_usize();
+                self.values[index].clone()
+            }
+            Operand::Location(loc) => ValueRef::new(CallLocation::new(loc).into()),
+            _ => unreachable!(),
+        }
     }
 
     fn store_value(&mut self, addr: Operand, value: ValueRef) {
@@ -189,7 +195,10 @@ impl Interpreter {
         futures::executor::block_on(Self::eval_script_async(script, env))
     }
 
-    pub async fn eval_script_async(script: &str, env: Environment) -> Result<Option<ValueRef>, Error> {
+    pub async fn eval_script_async(
+        script: &str,
+        env: Environment,
+    ) -> Result<Option<ValueRef>, Error> {
         let compiler = Compiler::new();
 
         let module = compiler.compile(script)?;
@@ -446,7 +455,7 @@ impl Interpreter {
                     }
                 }
                 Instruction::Call { func, args, result } => match func {
-                    Operand::Location(offset) => {
+                    Operand::Location(_location) => {
                         self.call_function(func, &args, result)?;
                         continue;
                     }
@@ -467,9 +476,11 @@ impl Interpreter {
                                 self.stack.store_value(result, ret.into());
                             }
                         } else {
-                            return Err(RuntimeError::symbol_not_found(
-                                "function not found".to_string(),
-                            ));
+                            println!("variable({:?}) is not a function", func);
+                            return Err(RuntimeError::internal(format!(
+                                "variable({:?}) is not a function",
+                                func
+                            )));
                         }
                     }
                     _ => {
@@ -561,7 +572,9 @@ impl Interpreter {
     }
 
     fn set_pc(&mut self, operand: Operand) {
-        self.pc = operand.as_offset().expect("expected offset branch target");
+        self.pc = operand
+            .as_location()
+            .expect("expected offset branch target");
     }
 
     fn next_pc(&self) -> usize {

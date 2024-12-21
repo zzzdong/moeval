@@ -603,7 +603,7 @@ fn parse_literal(pair: Pair<Rule>) -> Result<LiteralExpression> {
     let value = pairs.next().unwrap();
 
     match value.as_rule() {
-        Rule::boolean => Ok(LiteralExpression::Boolean(pairs.as_str() == "true")),
+        Rule::boolean => Ok(LiteralExpression::Boolean(value.as_str() == "true")),
         Rule::integer => Ok(LiteralExpression::Integer(value.as_str().parse().map_err(
             |err| ParseError::with_message(value.as_span(), format!("parse integer failed, {err}")),
         )?)),

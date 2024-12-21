@@ -49,7 +49,7 @@ impl Operand {
         }
     }
 
-    pub fn as_offset(&self) -> Option<usize> {
+    pub fn as_location(&self) -> Option<usize> {
         match self {
             Operand::Location(offset) => Some(*offset),
             _ => None,

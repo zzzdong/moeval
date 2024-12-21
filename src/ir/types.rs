@@ -398,6 +398,10 @@ fn rewrite_inst_function_address(
 ) -> Instruction {
     match inst {
         Instruction::Call { func, args, result } => {
+            let args = args
+                .into_iter()
+                .map(|arg| rewrite_function_address_operand(arg, func_offset_map))
+                .collect();
             let new_func = rewrite_function_address_operand(func, func_offset_map);
             Instruction::Call {
                 func: new_func,
@@ -416,7 +420,7 @@ fn rewrite_inst_function_address(
 fn rewrite_br_offset(inst: Instruction, offset: usize) -> Instruction {
     match inst {
         Instruction::Br { dst } => Instruction::Br {
-            dst: Operand::Location(dst.as_offset().expect("expected offset") + offset),
+            dst: Operand::Location(dst.as_location().expect("expected offset") + offset),
         },
         Instruction::BrIf {
             condition,
@@ -424,8 +428,10 @@ fn rewrite_br_offset(inst: Instruction, offset: usize) -> Instruction {
             false_blk,
         } => Instruction::BrIf {
             condition,
-            true_blk: Operand::Location(true_blk.as_offset().expect("expected offset") + offset),
-            false_blk: Operand::Location(false_blk.as_offset().expect("expected offset") + offset),
+            true_blk: Operand::Location(true_blk.as_location().expect("expected offset") + offset),
+            false_blk: Operand::Location(
+                false_blk.as_location().expect("expected offset") + offset,
+            ),
         },
         _ => inst,
     }
@@ -484,8 +490,6 @@ fn sort_graph_blocks(control_flow_graph: &ControlFlowGraph) -> Vec<Block> {
     }
 
     sorted.reverse();
-
-    println!("sorted blocks: {:?}", sorted);
 
     sorted
         .into_iter()

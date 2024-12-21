@@ -244,11 +244,9 @@ fn test_eval_env() {
 
 #[test]
 fn test_eval() {
-    // init_logger();
+    init_logger();
 
-    let mut env = Environment::new();
-
-    env.define_function("println", println);
+    let env = Environment::new();
 
     let script = r#"
     fn fib(n) {

@@ -5,7 +5,7 @@ mod object;
 mod value;
 
 pub use eval::{Environment, Evaluator, Interpreter};
-pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple};
+pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple, Undefined};
 pub use value::{Value, ValueRef};
 
 use crate::ir::Operand;

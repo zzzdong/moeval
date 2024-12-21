@@ -268,6 +268,16 @@ impl Object for bool {
             (false, false) => Ok(std::cmp::Ordering::Equal),
         }
     }
+
+    fn logic_and(&self, other: &Value) -> Result<Value, RuntimeError> {
+        let other = other.try_downcast_ref::<bool>()?;
+        Ok(Value::new(*self && *other))
+    }
+
+    fn logic_or(&self, other: &Value) -> Result<Value, RuntimeError> {
+        let other = other.try_downcast_ref::<bool>()?;
+        Ok(Value::new(*self || *other))
+    }
 }
 
 /// Integer

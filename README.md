@@ -6,7 +6,7 @@ A toy interpreter.
 # example
 
 ```rust
-use moeval::{Environment, Evaluator};
+use moeval::{Interpreter, Evaluator};
 
 fn main() {
     let mut env = Environment::new();
@@ -31,7 +31,7 @@ fn main() {
     return sum;
     "#;
 
-    let retval = Evaluator::eval_script(script, env).unwrap();
+    let retval = Interpreter::eval_script(script, env).unwrap();
 
     println!("ret: {:?}", ret); 
     // should output: 
