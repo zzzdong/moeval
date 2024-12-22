@@ -1,7 +1,16 @@
 use super::{types::Block, ControlFlowGraph, Inst, Instruction};
 
 pub trait InstPass: std::fmt::Debug {
-    fn run(&mut self, inst: Inst) -> Inst;
+    fn optimize(&mut self, inst: Inst) -> Inst {
+        let mut inst = inst;
+        self.optimize_graph(&mut inst.control_flow_graph);
+        inst.functions.iter_mut().for_each(|func| {
+            self.optimize_graph(&mut func.control_flow_graph);
+        });
+        inst
+    }
+
+    fn optimize_graph(&mut self, cfg: &mut ControlFlowGraph);
 }
 
 pub struct InstPassManager {
@@ -20,7 +29,7 @@ impl InstPassManager {
     pub fn run(&mut self, inst: Inst) -> Inst {
         self.passes
             .iter_mut()
-            .fold(inst, |inst, pass| pass.run(inst))
+            .fold(inst, |inst, pass| pass.optimize(inst))
     }
 }
 
@@ -70,7 +79,7 @@ impl SimplifyPass {
 }
 
 impl InstPass for SimplifyPass {
-    fn run(&mut self, inst: Inst) -> Inst {
-        inst
+    fn optimize_graph(&mut self, cfg: &mut ControlFlowGraph) {
+        self.simplify_graph(cfg)
     }
 }

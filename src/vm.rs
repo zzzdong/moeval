@@ -3,8 +3,10 @@ use object::OperateKind;
 mod eval;
 mod object;
 mod value;
+mod interpreter;
 
-pub use eval::{Environment, Evaluator, Interpreter};
+pub use eval::{Environment, Evaluator};
+pub use interpreter::Interpreter;
 pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple, Undefined};
 pub use value::{Value, ValueRef};
 

@@ -1,263 +1,85 @@
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::ops::Deref;
+use std::{cmp::Ordering, ops::Deref};
 
-use super::object::*;
-use super::value::{Value, ValueRef};
-use super::RuntimeError;
-use crate::compiler::Compiler;
-use crate::error::Error;
-use crate::ir::{
-    BlockId, ControlFlowGraph, FunctionId, Inst, Instruction, Opcode, Operand,
-};
+use super::{eval::Stack, Environment, Value, ValueRef};
+use crate::{compiler::Compiler, ir::{Instruction, Instructions, Module, Opcode, Operand}, vm::object::{CallLocation, Enumerator, Range, SliceIndex}, Array, Error, Map, NativeFunction, Object, Promise, RuntimeError};
 
-pub struct Environment {
-    symbols: HashMap<String, ValueRef>,
+struct CallStack {
+    next_pc: usize,
+    result: Operand,
 }
 
-impl Default for Environment {
-    fn default() -> Self {
-        Self::new()
+impl CallStack {
+    pub fn new(next_pc: usize, result: Operand) -> Self {
+        Self { next_pc, result }
     }
 }
 
-impl Environment {
-    pub fn new() -> Self {
-        Environment {
-            symbols: HashMap::new(),
-        }
-    }
-
-    pub fn define(&mut self, name: impl ToString, value: impl Into<Value>) {
-        self.symbols
-            .insert(name.to_string(), ValueRef::new(value.into()));
-    }
-
-    // pub fn define_function<F>(&mut self, name: impl ToString, func: F)
-    // where
-    //     F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
-    // {
-    //     let name = name.to_string();
-    //     self.define(name.clone(), NativeFunction::new(name, Box::new(func)));
-    // }
-
-    pub fn define_function<Args: 'static>(
-        &mut self,
-        name: impl ToString,
-        callable: impl Callable<Args>,
-    ) {
-        self.define(
-            name.to_string(),
-            NativeFunction::new(name, Box::new(callable.into_function())),
-        );
-    }
-
-    pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
-        self.symbols.get(name.as_ref()).cloned()
-    }
-}
-
-#[derive(Debug, Default)]
-struct StackFrame {
-    pub values: Vec<ValueRef>,
-    pub args: Vec<ValueRef>,
-}
-
-impl StackFrame {
-    fn new() -> Self {
-        Self {
-            values: Vec::with_capacity(16),
-            args: vec![],
-        }
-    }
-
-    fn alloc(&mut self, addr: Operand) -> ValueRef {
-        let index = addr.id().as_usize();
-
-        if index >= self.values.len() {
-            self.values
-                .resize_with(index + 1, || ValueRef::new(Value::default()));
-        }
-        self.values[index].clone()
-    }
-
-    fn load_value(&self, addr: Operand) -> ValueRef {
-        match addr {
-            Operand::Variable(var) => {
-                let index = var.as_usize();
-                self.values[index].clone()
-            }
-            Operand::Location(loc) => ValueRef::new(CallLocation::new(loc).into()),
-            _ => unreachable!(),
-        }
-    }
-
-    fn store_value(&mut self, addr: Operand, value: ValueRef) {
-        let index = addr.id().as_usize();
-        self.values[index] = value;
-    }
-}
-
-#[derive(Debug)]
-pub struct Stack {
-    frames: Vec<StackFrame>,
-}
-
-impl Stack {
-    pub fn new() -> Self {
-        Self { frames: vec![] }
-    }
-
-    pub fn alloc_frame(&mut self) {
-        self.frames.push(StackFrame::new());
-    }
-
-    pub fn dealloc_frame(&mut self) {
-        self.frames.pop();
-    }
-
-    fn top(&self) -> Option<&StackFrame> {
-        self.frames.last()
-    }
-
-    fn top_mut(&mut self) -> Option<&mut StackFrame> {
-        self.frames.last_mut()
-    }
-
-    pub fn load_value(&self, addr: Operand) -> ValueRef {
-        self.top().unwrap().load_value(addr)
-    }
-
-    pub fn store_value(&mut self, addr: Operand, value: ValueRef) {
-        self.top_mut().unwrap().store_value(addr, value);
-    }
-
-    pub fn load_argument(&self, index: usize) -> ValueRef {
-        self.top().unwrap().args[index].clone()
-    }
-
-    pub fn store_argument(&mut self, value: ValueRef) {
-        self.top_mut().unwrap().args.push(value);
-    }
-
-    pub fn alloc(&mut self, addr: Operand) {
-        self.top_mut().unwrap().alloc(addr);
-    }
-}
-
-enum ControlFlow {
-    Block(BlockId),
-    Return(Option<ValueRef>),
-}
-
-pub struct Evaluator {
+pub struct Interpreter {
     constants: Vec<ValueRef>,
-    stack: Stack,
-    module: Inst,
+    instructions: Instructions,
     env: Environment,
-    current_control_flow_graph: Option<ControlFlowGraph>,
+    stack: Stack,
+    pc: usize,
+    call_stack: Vec<CallStack>,
 }
 
-impl Evaluator {
-    pub fn new(module: Inst, env: Environment) -> Self {
-        let constants = module
-            .constants
-            .iter()
+impl Interpreter {
+    pub fn new(module: Module, env: Environment) -> Self {
+        let Module {
+            name,
+            constants,
+            instructions,
+        } = module;
+
+        let constants = constants
+            .into_iter()
             .map(|v| ValueRef::new(Value::from_primitive(v.clone())))
             .collect();
 
         Self {
             constants,
-            stack: Stack::new(),
-            module,
+            instructions,
             env,
-            current_control_flow_graph: None,
+            stack: Stack::new(),
+            pc: 0,
+            call_stack: Vec::new(),
         }
     }
 
     pub fn eval_script(script: &str, env: Environment) -> Result<Option<ValueRef>, Error> {
+        futures::executor::block_on(Self::eval_script_async(script, env))
+    }
+
+    pub async fn eval_script_async(
+        script: &str,
+        env: Environment,
+    ) -> Result<Option<ValueRef>, Error> {
         let compiler = Compiler::new();
 
         let module = compiler.compile(script)?;
 
         log::trace!("module {module}");
 
-        unimplemented!()
+        let mut interpreter = Interpreter::new(module, env);
 
-        // let mut this = Evaluator::new(module, env);
-
-        // let ret = this.eval()?;
-
-        // Ok(ret)
-    }
-
-    fn eval(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
-        self.stack.alloc_frame();
-
-        let control_flow_graph = self.module.control_flow_graph.clone();
-
-        let entry = control_flow_graph.entry();
-
-        self.switch_control_flow_graph(control_flow_graph);
-
-        let ret = self.eval_blocks(entry)?;
-
-        self.stack.dealloc_frame();
+        let ret = interpreter.run().await?;
 
         Ok(ret)
     }
 
-    fn switch_control_flow_graph(
-        &mut self,
-        control_flow_graph: ControlFlowGraph,
-    ) -> Option<ControlFlowGraph> {
-        std::mem::replace(
-            &mut self.current_control_flow_graph,
-            Some(control_flow_graph),
-        )
-    }
-
-    fn eval_function(
-        &mut self,
-        func: FunctionId,
-        args: Vec<ValueRef>,
-    ) -> Result<Option<ValueRef>, RuntimeError> {
+    pub async fn run(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
         self.stack.alloc_frame();
 
-        for arg in args {
-            self.stack.store_argument(arg);
-        }
-        let ret = self.eval_call(func)?;
+        loop {
+            let inst = match self.instructions.get(self.pc).cloned() {
+                Some(inst) => inst,
+                None => return Ok(None),
+            };
 
-        self.stack.dealloc_frame();
-
-        Ok(ret)
-    }
-
-    fn load_value(&self, addr: Operand) -> Result<ValueRef, RuntimeError> {
-        match addr {
-            Operand::Constant(const_id) => Ok(self.constants[const_id.as_usize()].clone()),
-            Operand::Variable(_) => Ok(self.stack.load_value(addr)),
-            _ => Err(RuntimeError::invalid_operand(addr)),
-        }
-    }
-
-    fn eval_block(&mut self, block: BlockId) -> Result<ControlFlow, RuntimeError> {
-        let block = self
-            .current_control_flow_graph
-            .as_ref()
-            .and_then(|cfg| cfg.get_block(block))
-            .cloned()
-            .ok_or(RuntimeError::internal("block not found"))?;
-
-        let instructions = block.instructions.iter();
-
-        for inst in instructions {
-            let inst = inst.clone();
-
-            log::trace!("running: {inst:?}");
+            log::trace!("running: {:08}-{inst:?}", self.pc);
 
             match inst {
+                Instruction::Halt => return Ok(None),
                 Instruction::Alloc { dst } => {
                     self.stack.alloc(dst);
                 }
@@ -467,9 +289,8 @@ impl Evaluator {
                 }
 
                 Instruction::Br { dst } => {
-                    return Ok(ControlFlow::Block(
-                        dst.as_block().ok_or(RuntimeError::invalid_operand(dst))?,
-                    ));
+                    self.set_pc(dst);
+                    continue;
                 }
                 Instruction::BrIf {
                     condition,
@@ -481,28 +302,25 @@ impl Evaluator {
                     let cond = cond.try_downcast_ref::<bool>()?;
 
                     if *cond {
-                        return Ok(ControlFlow::Block(
-                            true_blk
-                                .as_block()
-                                .ok_or(RuntimeError::invalid_operand(true_blk))?,
-                        ));
+                        self.set_pc(true_blk);
+                        continue;
                     } else {
-                        return Ok(ControlFlow::Block(
-                            false_blk
-                                .as_block()
-                                .ok_or(RuntimeError::invalid_operand(false_blk))?,
-                        ));
+                        self.set_pc(false_blk);
+                        continue;
                     }
                 }
                 Instruction::Call { func, args, result } => match func {
-                    Operand::Function(func_id) => {
-                        self.call_function(func_id, args, result)?;
+                    Operand::Location(_location) => {
+                        self.call_function(func, &args, result)?;
+                        continue;
                     }
                     Operand::Variable(_) => {
                         let mut func = self.stack.load_value(func);
                         let callable = func.get_mut();
-                        if let Some(UserFunction(id)) = callable.downcast_mut::<UserFunction>() {
-                            self.call_function(*id, args, result)?;
+                        if let Some(CallLocation(loc)) = callable.downcast_mut::<CallLocation>()
+                        {
+                            self.call_function(Operand::Location(*loc), &args, result)?;
+                            continue;
                         } else if let Some(callable) =
                             func.get_mut().downcast_mut::<NativeFunction>()
                         {
@@ -513,13 +331,15 @@ impl Evaluator {
                                 self.stack.store_value(result, ret.into());
                             }
                         } else {
-                            return Err(RuntimeError::symbol_not_found(
-                                "function not found".to_string(),
-                            ));
+                            println!("variable({:?}) is not a function", func);
+                            return Err(RuntimeError::internal(format!(
+                                "variable({:?}) is not a function",
+                                func
+                            )));
                         }
                     }
                     _ => {
-                        unreachable!("unreachable")
+                        unreachable!("unsupported call instruction {func:?}")
                     }
                 },
                 Instruction::PropertyCall {
@@ -546,92 +366,73 @@ impl Evaluator {
                 }
                 Instruction::Return { value } => {
                     let value = value.map(|v| self.stack.load_value(v));
-                    return Ok(ControlFlow::Return(value));
+                    if self.call_stack.is_empty() {
+                        return Ok(value);
+                    }
+                    match self.call_stack.pop() {
+                        Some(stack) => {
+                            self.pc = stack.next_pc;
+                            self.stack.dealloc_frame();
+                            self.stack
+                                .store_value(stack.result, value.unwrap_or_default());
+                            continue;
+                        }
+                        None => {
+                            return Err(RuntimeError::internal("call stack underflow").into());
+                        }
+                    }
                 }
                 Instruction::Await { promise, dst } => {
-                    let promise = self.stack.load_value(promise);
-
-                    let mut promise = promise.clone();
-
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-
-                    tokio::spawn(async move {
-                        let promise = promise.get_mut();
-                        let promise = promise.try_downcast_mut::<Promise>().unwrap();
-                        let ret = promise.await;
-                        let _ = tx.send(ret);
-                    });
-
-                    match rx.blocking_recv() {
-                        Ok(result) => {
-                            self.stack.store_value(dst, result.into());
-                        }
-                        Err(e) => return Err(RuntimeError::internal("await failed")),
-                    }
+                    let mut promise = self.stack.load_value(promise);
+                    let promise = promise.get_mut();
+                    let promise = promise.try_downcast_mut::<Promise>().unwrap();
+                    let ret = promise.await;
+                    self.stack.store_value(dst, ret.into());
                 }
                 _ => unimplemented!("unimplemented: {inst:?}"),
             }
-        }
 
-        Ok(ControlFlow::Return(None))
+            self.pc += 1;
+        }
     }
 
     fn call_function(
         &mut self,
-        id: FunctionId,
-        args: Vec<Operand>,
+        callee: Operand,
+        args: &[Operand],
         result: Operand,
     ) -> Result<(), RuntimeError> {
         let args: Vec<ValueRef> = args.iter().map(|arg| self.stack.load_value(*arg)).collect();
 
-        let ret = self.eval_function(id, args)?;
+        self.stack.alloc_frame();
 
-        self.stack
-            .store_value(result, ret.unwrap_or(ValueRef::new(Value::default())));
+        for arg in args {
+            self.stack.store_argument(arg);
+        }
+
+        self.call_stack.push(CallStack::new(self.next_pc(), result));
+
+        self.set_pc(callee);
 
         Ok(())
     }
 
-    fn eval_call(&mut self, func: FunctionId) -> Result<Option<ValueRef>, RuntimeError> {
-        let func = self
-            .module
-            .get_function(func)
-            .ok_or(RuntimeError::symbol_not_found("function not found"))?;
-        let mut next_block = func.control_flow_graph.entry();
-
-        let old = self.switch_control_flow_graph(func.control_flow_graph.clone());
-
-        while let Some(block) = next_block.take() {
-            match self.eval_block(block)? {
-                ControlFlow::Block(next) => {
-                    next_block = Some(next);
-                }
-                ControlFlow::Return(value) => {
-                    self.switch_control_flow_graph(old.expect("missing control flow graph"));
-                    return Ok(value);
-                }
-            }
+    fn load_value(&self, addr: Operand) -> Result<ValueRef, RuntimeError> {
+        match addr {
+            Operand::Constant(const_id) => Ok(self.constants[const_id.as_usize()].clone()),
+            Operand::Variable(_) => Ok(self.stack.load_value(addr)),
+            Operand::Location(offset) => Ok(ValueRef::new(CallLocation(offset).into())),
+            _ => Err(RuntimeError::invalid_operand(addr)),
         }
-
-        self.switch_control_flow_graph(old.expect("missing control flow graph"));
-
-        Ok(None)
     }
 
-    fn eval_blocks(&mut self, entry: Option<BlockId>) -> Result<Option<ValueRef>, RuntimeError> {
-        let mut next_block = entry;
+    fn set_pc(&mut self, operand: Operand) {
+        self.pc = operand
+            .as_location()
+            .expect("expected offset branch target");
+    }
 
-        while let Some(block) = next_block.take() {
-            match self.eval_block(block)? {
-                ControlFlow::Block(next) => {
-                    next_block = Some(next);
-                }
-                ControlFlow::Return(value) => {
-                    return Ok(value);
-                }
-            }
-        }
-
-        Ok(None)
+    fn next_pc(&self) -> usize {
+        self.pc + 1
     }
 }
