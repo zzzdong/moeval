@@ -1,13 +1,9 @@
-mod ast;
-mod parser;
+use crate::ast::*;
+use crate::ir::*;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-
-use crate::ir::*;
-use ast::*;
-use parser::ParseError;
 
 #[derive(Debug)]
 pub enum CompileError {
@@ -41,7 +37,7 @@ impl Compiler {
 
     pub fn compile(&self, input: &str) -> Result<Module, CompileError> {
         // 解析输入
-        let ast = parser::parse_file(input)?;
+        let ast = parse_file(input)?;
         // println!("{:#?}", ast);
         // // 语义分析
         // let ast = crate::semantics::analyze(ast)?;
@@ -128,9 +124,11 @@ impl<'a> InstCompiler<'a> {
                 let value = value.map(|expr| self.compile_expression(expr));
                 self.builder.return_(value);
             }
-
             Statement::If(if_stmt) => {
                 self.compile_if_stmt(if_stmt);
+            }
+            Statement::Loop(loop_stmt) => {
+                self.compile_loop_stmt(loop_stmt);
             }
             Statement::For(for_stmt) => {
                 self.compile_for_stmt(for_stmt);
@@ -156,7 +154,7 @@ impl<'a> InstCompiler<'a> {
             self.builder.assign(dst, value);
         }
 
-        self.symbols.declare(&name, Symbol::new_variable(dst));
+        self.symbols.declare(&name, Symbol::new(dst));
     }
 
     fn compile_item_stmt(&mut self, item: ItemStatement) {
@@ -177,10 +175,7 @@ impl<'a> InstCompiler<'a> {
 
         let merge_blk = self.create_block("if_merge");
         let then_blk = self.create_block("if_then");
-        let else_blk = else_branch.as_ref().map(|_| {
-            let blk = self.create_block("if_else");
-            blk
-        });
+        let else_blk = else_branch.as_ref().map(|_| self.create_block("if_else"));
 
         let cond = self.compile_expression(condition);
         self.builder
@@ -206,7 +201,7 @@ impl<'a> InstCompiler<'a> {
             Pattern::Identifier(ident) => {
                 let dst = self.builder.create_alloc();
                 self.builder.assign(dst, value);
-                self.symbols.declare(&ident, Symbol::new_variable(dst));
+                self.symbols.declare(&ident, Symbol::new(dst));
             }
 
             Pattern::Tuple(pats) => {
@@ -263,8 +258,34 @@ impl<'a> InstCompiler<'a> {
 
         self.builder.br(loop_header);
 
+        // done loop
         self.level_loop_context();
-        // after loop
+        self.builder.switch_to_block(after_blk);
+    }
+
+    fn compile_loop_stmt(&mut self, loop_stmt: LoopStatement) {
+        let LoopStatement { body } = loop_stmt;
+
+        let loop_body = self.create_block("loop_body");
+        let after_blk = self.create_block(None);
+
+        self.enter_loop_context(after_blk, loop_body);
+
+        self.builder.br(loop_body);
+        self.builder.switch_to_block(loop_body);
+        let new_symbols = self.symbols.new_scope();
+        let old_symbols = std::mem::replace(&mut self.symbols, new_symbols);
+
+        for statement in body {
+            self.compile_statement(statement);
+        }
+
+        self.symbols = old_symbols;
+
+        self.builder.br(loop_body);
+
+        // done loop
+        self.level_loop_context();
         self.builder.switch_to_block(after_blk);
     }
 
@@ -299,7 +320,7 @@ impl<'a> InstCompiler<'a> {
     fn compile_function(
         &mut self,
         name: Option<String>,
-        params: Vec<ast::FunctionParam>,
+        params: Vec<FunctionParam>,
         body: Vec<Statement>,
     ) -> Operand {
         let curr = self.builder.current_block();
@@ -329,7 +350,7 @@ impl<'a> InstCompiler<'a> {
             let arg = func_compiler.builder.load_argument(idx);
             func_compiler
                 .symbols
-                .declare(param.name.as_str(), Symbol::new_variable(arg));
+                .declare(param.name.as_str(), Symbol::new(arg));
         }
 
         for stmt in body {
@@ -572,8 +593,7 @@ impl<'a> InstCompiler<'a> {
                     Some(func) => Operand::Function(func.id),
                     None => {
                         let value = self.builder.load_external_variable(identifier.0.clone());
-                        self.symbols
-                            .declare(&identifier.0, Symbol::new_variable(value));
+                        self.symbols.declare(&identifier.0, Symbol::new(value));
                         value
                     }
                 }
@@ -640,25 +660,15 @@ impl<'a> InstCompiler<'a> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Symbol {
-    Variable(Operand),
-    Function(FunctionId),
-}
+pub struct Symbol(Operand);
 
 impl Symbol {
-    pub fn new_variable(value: Operand) -> Symbol {
-        Symbol::Variable(value)
-    }
-
-    pub fn new_function(value: FunctionId) -> Symbol {
-        Symbol::Function(value)
+    pub fn new(value: Operand) -> Symbol {
+        Symbol(value)
     }
 
     pub fn as_variable(&self) -> Operand {
-        match self {
-            Symbol::Variable(value) => *value,
-            _ => panic!("not a variable"),
-        }
+        self.0
     }
 }
 

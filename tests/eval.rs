@@ -15,7 +15,7 @@ fn fib(n: i64) -> i64 {
         return 1;
     }
 
-    return fib(n - 1) + fib(n - 2);
+    fib(n - 1) + fib(n - 2)
 }
 
 fn println(args: &[ValueRef]) {

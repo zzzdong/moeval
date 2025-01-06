@@ -1,9 +1,9 @@
 use object::OperateKind;
 
 mod eval;
+mod interpreter;
 mod object;
 mod value;
-mod interpreter;
 
 pub use eval::{Environment, Evaluator};
 pub use interpreter::Interpreter;

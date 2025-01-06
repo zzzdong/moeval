@@ -1,4 +1,4 @@
-use moeval::{Environment, Evaluator, Interpreter, Promise, Value, ValueRef};
+use moeval::{Environment, Interpreter, Promise, Value, ValueRef};
 
 #[tokio::main]
 async fn main() {

@@ -1,7 +1,5 @@
 use indexmap::IndexSet;
-use petgraph::algo::{kosaraju_scc, toposort};
-use petgraph::graph::{self, DiGraph};
-use petgraph::visit::{DfsPostOrder, IntoNodeIdentifiers};
+use petgraph::visit::DfsPostOrder;
 
 use super::builder::ControlFlowGraph;
 use super::instruction::*;
@@ -160,6 +158,12 @@ pub struct Instructions {
     instructions: Vec<Instruction>,
 }
 
+impl Default for Instructions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Instructions {
     pub fn new() -> Self {
         Self {
@@ -216,7 +220,7 @@ fn rewrite_block_operand(operand: Operand, block_map: &HashMap<BlockId, usize>) 
 fn rewrite_br_inst(inst: Instruction, block_map: &HashMap<BlockId, usize>) -> Instruction {
     match inst {
         Instruction::Br { dst } => Instruction::Br {
-            dst: rewrite_block_operand(dst, &block_map),
+            dst: rewrite_block_operand(dst, block_map),
         },
         Instruction::BrIf {
             condition,
@@ -224,8 +228,8 @@ fn rewrite_br_inst(inst: Instruction, block_map: &HashMap<BlockId, usize>) -> In
             false_blk,
         } => Instruction::BrIf {
             condition,
-            true_blk: rewrite_block_operand(true_blk, &block_map),
-            false_blk: rewrite_block_operand(false_blk, &block_map),
+            true_blk: rewrite_block_operand(true_blk, block_map),
+            false_blk: rewrite_block_operand(false_blk, block_map),
         },
         _ => inst,
     }
@@ -383,7 +387,7 @@ fn rewrite_function_address_operand(
     match operand {
         Operand::Function(func_id) => {
             if let Some(offset) = func_offset_map.get(&func_id) {
-                return Operand::Location(*offset);
+                Operand::Location(*offset)
             } else {
                 panic!("Function ID not found in offset map");
             }
@@ -502,72 +506,6 @@ fn sort_graph_blocks(control_flow_graph: &ControlFlowGraph) -> Vec<Block> {
         .collect()
 }
 
-// fn sort_graph_blocks(control_flow_graph: &ControlFlowGraph) -> Vec<Block> {
-//     let mut graph = Graph::<(), (), Directed>::new();
-//     let mut node_map = HashMap::new();
-
-//     // 创建图节点
-//     for block in &control_flow_graph.blocks {
-//         let node = graph.add_node(());
-//         node_map.insert(block.id, node);
-//     }
-
-//     // 添加边
-//     for block in &control_flow_graph.blocks {
-//         for successor in &block.successors {
-//             if let Some(&src_node) = node_map.get(&block.id) {
-//                 if let Some(&dst_node) = node_map.get(successor) {
-//                     graph.add_edge(src_node, dst_node, ());
-//                 }
-//             }
-//         }
-//     }
-
-//     // 深度优先搜索并记录逆后序遍历
-//     let mut visited = HashSet::new();
-//     let mut post_order = Vec::new();
-
-//     fn dfs(
-//         node: NodeIndex,
-//         graph: &Graph<(), (), Directed>,
-//         visited: &mut HashSet<NodeIndex>,
-//         post_order: &mut Vec<NodeIndex>,
-//     ) {
-//         if visited.contains(&node) {
-//             return;
-//         }
-//         visited.insert(node);
-
-//         for neighbor in graph.neighbors_directed(node, petgraph::Direction::Outgoing) {
-//             dfs(neighbor, graph, visited, post_order);
-//         }
-
-//         post_order.push(node);
-//     }
-
-//     // 找到 entry 块并开始 DFS
-//     if let Some(entry_id) = control_flow_graph.entry {
-//         if let Some(&entry_node) = node_map.get(&entry_id) {
-//             dfs(entry_node, &graph, &mut visited, &mut post_order);
-//         }
-//     }
-
-//     // 将 post_order 转换为 Block 顺序
-//     let mut sorted_blocks = Vec::new();
-//     for &node in post_order.iter().rev() {
-//         if let Some(block_id) = node_map
-//             .iter()
-//             .find_map(|(&k, &v)| if v == node { Some(k) } else { None })
-//         {
-//             if let Some(block) = control_flow_graph.blocks.iter().find(|b| b.id == block_id) {
-//                 sorted_blocks.push(block.clone());
-//             }
-//         }
-//     }
-
-//     sorted_blocks
-// }
-
 pub struct Module {
     pub name: Name,
     pub constants: IndexSet<Primitive>,
@@ -590,11 +528,11 @@ impl Module {
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, constant) in self.constants.iter().enumerate() {
-            writeln!(f, "#{i:08}:\t {constant:?}")?;
+            writeln!(f, "#{i:08X}:\t {constant:?}")?;
         }
 
         for (i, instruction) in self.instructions.iter().enumerate() {
-            writeln!(f, "{i:08}:\t {instruction}")?;
+            writeln!(f, "{i:08X}:\t {instruction}")?;
         }
 
         Ok(())

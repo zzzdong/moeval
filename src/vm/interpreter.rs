@@ -1,7 +1,12 @@
 use std::{cmp::Ordering, ops::Deref};
 
 use super::{eval::Stack, Environment, Value, ValueRef};
-use crate::{compiler::Compiler, ir::{Instruction, Instructions, Module, Opcode, Operand}, vm::object::{CallLocation, Enumerator, Range, SliceIndex}, Array, Error, Map, NativeFunction, Object, Promise, RuntimeError};
+use crate::{
+    compiler::Compiler,
+    ir::{Instruction, Instructions, Module, Opcode, Operand},
+    vm::object::{CallLocation, Enumerator, Range, SliceIndex},
+    Array, Error, Map, NativeFunction, Object, Promise, RuntimeError,
+};
 
 struct CallStack {
     next_pc: usize,
@@ -317,8 +322,7 @@ impl Interpreter {
                     Operand::Variable(_) => {
                         let mut func = self.stack.load_value(func);
                         let callable = func.get_mut();
-                        if let Some(CallLocation(loc)) = callable.downcast_mut::<CallLocation>()
-                        {
+                        if let Some(CallLocation(loc)) = callable.downcast_mut::<CallLocation>() {
                             self.call_function(Operand::Location(*loc), &args, result)?;
                             continue;
                         } else if let Some(callable) =
@@ -378,7 +382,7 @@ impl Interpreter {
                             continue;
                         }
                         None => {
-                            return Err(RuntimeError::internal("call stack underflow").into());
+                            return Err(RuntimeError::internal("call stack underflow"));
                         }
                     }
                 }

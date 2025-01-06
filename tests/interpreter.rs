@@ -80,6 +80,27 @@ fn test_eval_string() {
 }
 
 #[test]
+fn test_eval_loop() {
+    let env = Environment::new();
+
+    let script = r#"
+        let i = 1;
+        let sum = 0;
+        loop {
+            sum += i;
+            i += 1;
+            if i > 10 {
+                break;
+            }
+        }
+        return sum;
+        "#;
+
+    let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
+    assert_eq!(retval, 55);
+}
+
+#[test]
 fn test_eval_for_loop() {
     let env = Environment::new();
 
@@ -327,7 +348,6 @@ fn test_eval_higher_order_function() {
     let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
     assert_eq!(retval, 7); // (5 + 1) + 1 = 7
 }
-
 
 #[test]
 fn test_eval_undefined_function_call() {

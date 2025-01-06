@@ -39,7 +39,7 @@ impl std::error::Error for ParseError {}
 type Result<T> = std::result::Result<T, ParseError>;
 
 #[derive(pest_derive::Parser)]
-#[grammar = "compiler/grammar.pest"]
+#[grammar = "ast/grammar.pest"]
 struct PestParser;
 
 pub fn parse_file(input: &str) -> Result<Program> {

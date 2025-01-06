@@ -43,15 +43,6 @@ impl SimplifyPass {
         Self
     }
 
-    pub fn run(&mut self, inst: Inst) -> Inst {
-        let mut inst = inst;
-        self.simplify_graph(&mut inst.control_flow_graph);
-        inst.functions.iter_mut().for_each(|func| {
-            self.simplify_graph(&mut func.control_flow_graph);
-        });
-        inst
-    }
-
     /// run the pass on the given control flow graph.
     fn simplify_graph(&mut self, graph: &mut ControlFlowGraph) {
         graph.blocks.iter_mut().for_each(|block| {
@@ -59,7 +50,7 @@ impl SimplifyPass {
         })
     }
 
-    /// Simplify a single block, when block ends with a br and it follows a return, remove the br.
+    /// Simplify a single block, remove unnecessary br instruction after a return at the end.
     fn simplify_block(&mut self, block: &mut Block) {
         let len = block.instructions.len();
 

@@ -7,9 +7,7 @@ use super::value::{Value, ValueRef};
 use super::RuntimeError;
 use crate::compiler::Compiler;
 use crate::error::Error;
-use crate::ir::{
-    BlockId, ControlFlowGraph, FunctionId, Inst, Instruction, Opcode, Operand,
-};
+use crate::ir::{BlockId, ControlFlowGraph, FunctionId, Inst, Instruction, Opcode, Operand};
 
 pub struct Environment {
     symbols: HashMap<String, ValueRef>,

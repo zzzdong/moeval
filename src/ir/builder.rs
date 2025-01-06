@@ -91,12 +91,26 @@ impl ControlFlowGraph {
         self.blocks.get(id.as_usize())
     }
 
-    fn block_append_successor(&mut self, block: BlockId, successors: BlockId, inst: Instruction) {
+    pub fn block_append_successor(
+        &mut self,
+        block: BlockId,
+        successors: BlockId,
+        inst: Instruction,
+    ) {
         self.graph.add_edge(
             self.block_node_map[&block],
             self.block_node_map[&successors],
             inst,
         );
+    }
+
+    pub fn block_remove_successor(&mut self, block: BlockId, successors: BlockId) {
+        if let Some(edge) = self.graph.find_edge(
+            self.block_node_map[&block],
+            self.block_node_map[&successors],
+        ) {
+            self.graph.remove_edge(edge);
+        }
     }
 }
 
@@ -355,13 +369,13 @@ impl<'a> ModuleBuilder<'a> {
     }
 }
 
-impl<'a> InstBuilder for ModuleBuilder<'a> {
+impl InstBuilder for ModuleBuilder<'_> {
     fn module(&self) -> &Inst {
-        &self.module
+        self.module
     }
 
     fn module_mut(&mut self) -> &mut Inst {
-        &mut self.module
+        self.module
     }
 
     fn control_flow_graph(&self) -> &ControlFlowGraph {
@@ -386,11 +400,11 @@ impl<'long, 'short: 'long> FunctionBuilder<'long, 'short> {
 
 impl<'long, 'short: 'long> InstBuilder for FunctionBuilder<'long, 'short> {
     fn module(&self) -> &Inst {
-        &self.module
+        self.module
     }
 
     fn module_mut(&mut self) -> &mut Inst {
-        &mut self.module
+        self.module
     }
 
     fn control_flow_graph(&self) -> &ControlFlowGraph {
