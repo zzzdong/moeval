@@ -1,6 +1,7 @@
 mod builder;
 mod instpass;
 mod instruction;
+mod interpreter;
 mod types;
 
 pub use builder::{ControlFlowGraph, FunctionBuilder, InstBuilder, ModuleBuilder};

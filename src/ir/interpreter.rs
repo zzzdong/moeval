@@ -2,14 +2,59 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::Deref;
 
-use super::object::*;
-use super::value::{Value, ValueRef};
-use super::RuntimeError;
 use crate::compiler::Compiler;
 use crate::error::Error;
 use crate::ir::{BlockId, ControlFlowGraph, FunctionId, Inst, Instruction, Opcode, Operand};
+use crate::vm::{
+    Array, CallLocation, Callable, Enumerator, Map, NativeFunction, Object, Range, RuntimeError,
+    SliceIndex, Value, ValueRef, UserFunction,
+};
 
+pub struct Environment {
+    symbols: HashMap<String, ValueRef>,
+}
 
+impl Default for Environment {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Environment {
+    pub fn new() -> Self {
+        Environment {
+            symbols: HashMap::new(),
+        }
+    }
+
+    pub fn define(&mut self, name: impl ToString, value: impl Into<Value>) {
+        self.symbols
+            .insert(name.to_string(), ValueRef::new(value.into()));
+    }
+
+    // pub fn define_function<F>(&mut self, name: impl ToString, func: F)
+    // where
+    //     F: Fn(&[ValueRef]) -> Result<Option<Value>, RuntimeError> + 'static,
+    // {
+    //     let name = name.to_string();
+    //     self.define(name.clone(), NativeFunction::new(name, Box::new(func)));
+    // }
+
+    pub fn define_function<Args: 'static>(
+        &mut self,
+        name: impl ToString,
+        callable: impl Callable<Args>,
+    ) {
+        self.define(
+            name.to_string(),
+            NativeFunction::new(name, Box::new(callable.into_function())),
+        );
+    }
+
+    pub fn get(&self, name: impl AsRef<str>) -> Option<ValueRef> {
+        self.symbols.get(name.as_ref()).cloned()
+    }
+}
 
 #[derive(Debug, Default)]
 struct StackFrame {
@@ -502,26 +547,8 @@ impl Evaluator {
                     let value = value.map(|v| self.stack.load_value(v));
                     return Ok(ControlFlow::Return(value));
                 }
-                Instruction::Await { promise, dst } => {
-                    let promise = self.stack.load_value(promise);
-
-                    let mut promise = promise.clone();
-
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-
-                    tokio::spawn(async move {
-                        let promise = promise.get_mut();
-                        let promise = promise.try_downcast_mut::<Promise>().unwrap();
-                        let ret = promise.await;
-                        let _ = tx.send(ret);
-                    });
-
-                    match rx.blocking_recv() {
-                        Ok(result) => {
-                            self.stack.store_value(dst, result.into());
-                        }
-                        Err(e) => return Err(RuntimeError::internal("await failed")),
-                    }
+                Instruction::Await { .. } => {
+                    unimplemented!("await not implemented in IR interpreter");
                 }
                 _ => unimplemented!("unimplemented: {inst:?}"),
             }

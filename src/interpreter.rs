@@ -1,10 +1,10 @@
 use std::{cmp::Ordering, ops::Deref};
 
-use super::{eval::Stack, Environment, Value, ValueRef};
+use crate::vm::{Stack, Environment, Value, ValueRef};
 use crate::{
     compiler::Compiler,
     ir::{Instruction, Instructions, Module, Opcode, Operand},
-    vm::object::{CallLocation, Enumerator, Range, SliceIndex},
+    vm::{CallLocation, Enumerator, Range, SliceIndex},
     Array, Error, Map, NativeFunction, Object, Promise, RuntimeError,
 };
 

@@ -1,13 +1,16 @@
 use object::OperateKind;
 
-mod eval;
-mod interpreter;
+mod environment;
 mod object;
+mod stack;
 mod value;
 
-pub use eval::{Environment, Evaluator};
-pub use interpreter::Interpreter;
-pub use object::{Array, Map, NativeFunction, Object, Promise, Tuple, Undefined};
+pub use environment::Environment;
+pub use object::{
+    Array, CallLocation, Callable, Enumerator, Map, NativeFunction, Object, Promise, Range,
+    SliceIndex, Tuple, Undefined, UserFunction,
+};
+pub use stack::Stack;
 pub use value::{Value, ValueRef};
 
 use crate::ir::Operand;
