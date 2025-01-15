@@ -7,11 +7,11 @@ mod value;
 
 pub use environment::Environment;
 pub use object::{
-    Array, CallLocation, Callable, Enumerator, Map, NativeFunction, Object, Promise, Range,
-    SliceIndex, Tuple, Undefined, UserFunction,
+    Array, CallLocation, Callable, Enumerator, Map, NativeFunction, Null, Object, Promise, Range,
+    SliceIndex, Tuple, UserFunction,
 };
 pub use stack::Stack;
-pub use value::{Value, ValueRef};
+pub use value::{Primitive, Value, ValueRef};
 
 use crate::ir::Operand;
 

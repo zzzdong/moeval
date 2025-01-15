@@ -5,9 +5,9 @@ use std::marker::PhantomData;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 
-use crate::ir::{FunctionId, Primitive};
+use crate::ir::FunctionId;
 
-use super::value::{Value, ValueRef};
+use super::value::{Primitive, Value, ValueRef};
 use super::RuntimeError;
 
 #[derive(Debug, Clone, Copy)]
@@ -230,15 +230,15 @@ pub trait Object: std::any::Any + std::fmt::Debug {
     }
 }
 
-/// Undefined
+/// Null
 #[derive(Debug, PartialEq, PartialOrd)]
-pub struct Undefined;
+pub struct Null;
 
-impl Object for Undefined {
+impl Object for Null {
     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
-        let other = other.try_downcast_ref::<Undefined>()?;
+        let other = other.try_downcast_ref::<Null>()?;
         self.partial_cmp(other).ok_or_else(|| {
-            RuntimeError::invalid_operation(OperateKind::Compare, "can not compare undefined")
+            RuntimeError::invalid_operation(OperateKind::Compare, "can not compare null")
         })
     }
 }
@@ -248,7 +248,7 @@ impl Object for () {
     fn compare(&self, other: &Value) -> Result<std::cmp::Ordering, RuntimeError> {
         let other = other.try_downcast_ref::<()>()?;
         self.partial_cmp(other).ok_or_else(|| {
-            RuntimeError::invalid_operation(OperateKind::Compare, "can not compare undefined")
+            RuntimeError::invalid_operation(OperateKind::Compare, "can not compare null")
         })
     }
 }
@@ -480,6 +480,9 @@ impl Object for f64 {
         }
     }
 }
+
+/// Char
+impl Object for char {}
 
 /// String
 impl Object for String {

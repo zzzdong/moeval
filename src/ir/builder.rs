@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use petgraph::graph::DiGraph;
 use petgraph::graph::NodeIndex;
 
+use crate::vm::Primitive;
+
 use super::instruction::*;
 use super::types::*;
 

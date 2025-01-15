@@ -1,8 +1,9 @@
-use crate::{compiler::CompileError, vm::RuntimeError};
+use crate::{ast::ParseError, compiler::CompileError, vm::RuntimeError};
 
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
+    Parse(ParseError),
     Compile(CompileError),
     Runtime(RuntimeError),
 }
@@ -10,6 +11,12 @@ pub enum Error {
 impl From<std::io::Error> for Error {
     fn from(error: std::io::Error) -> Self {
         Error::Io(error)
+    }
+}
+
+impl From<ParseError> for Error {
+    fn from(error: ParseError) -> Self {
+        Error::Parse(error)
     }
 }
 

@@ -1,53 +1,14 @@
 use indexmap::IndexSet;
 use petgraph::visit::DfsPostOrder;
 
-use super::builder::ControlFlowGraph;
-use super::instruction::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 
-#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
-pub enum Primitive {
-    #[default]
-    Undefined,
-    Boolean(bool),
-    Byte(u8),
-    Integer(i64),
-    Float(f64),
-    Char(char),
-    String(String),
-}
+use crate::vm::Primitive;
 
-impl fmt::Display for Primitive {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Primitive::Boolean(b) => write!(f, "{}", b),
-            Primitive::Byte(b) => write!(f, "{}", b),
-            Primitive::Integer(i) => write!(f, "{}", i),
-            Primitive::Float(ff) => write!(f, "{}", ff),
-            Primitive::Char(c) => write!(f, "{}", c),
-            Primitive::String(s) => write!(f, "{}", s),
-            Primitive::Undefined => write!(f, "Undefined"),
-        }
-    }
-}
-
-impl Eq for Primitive {}
-
-impl std::hash::Hash for Primitive {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Primitive::Boolean(b) => b.hash(state),
-            Primitive::Byte(b) => b.hash(state),
-            Primitive::Integer(i) => i.hash(state),
-            Primitive::Float(f) => f.to_bits().hash(state),
-            Primitive::Char(c) => c.hash(state),
-            Primitive::String(s) => s.hash(state),
-            Primitive::Undefined => 1.hash(state),
-        }
-    }
-}
+use super::builder::ControlFlowGraph;
+use super::instruction::*;
 
 macro_rules! id_entity {
     ($name: ident) => {

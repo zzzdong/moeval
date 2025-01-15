@@ -1,4 +1,4 @@
-use moeval::{Environment, Interpreter, Undefined};
+use moeval::{Environment, Interpreter, Null};
 
 fn init_logger() {
     let _ = env_logger::builder()
@@ -17,7 +17,7 @@ fn test_eval_undefine() {
         "#;
 
     let retval = Interpreter::eval_script(script, env).unwrap().unwrap();
-    assert_eq!(retval, Undefined);
+    assert_eq!(retval, Null);
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_eval_map_iteration() {
 }
 
 #[test]
-fn test_eval_undefined_variable() {
+fn test_eval_null_variable() {
     let env = Environment::new();
 
     let script = r#"
@@ -350,7 +350,7 @@ fn test_eval_higher_order_function() {
 }
 
 #[test]
-fn test_eval_undefined_function_call() {
+fn test_eval_null_function_call() {
     let env = Environment::new();
 
     let script = r#"

@@ -54,6 +54,24 @@ pub fn parse_expression_input(input: &str) -> Result<Expression> {
     parse_expression_pairs(pairs)
 }
 
+pub fn parse_top_level(input: &str) -> Result<TopLevelItem> {
+    let mut pairs = PestParser::parse(Rule::top_level, input)?;
+    let pair = pairs.next().unwrap();
+    let pair = pair.into_inner().next().unwrap();
+
+    match pair.as_rule() {
+        Rule::statement => {
+            let statement = parse_statement(pair)?;
+            Ok(TopLevelItem::Statement(statement))
+        }
+        Rule::expression => {
+            let expression = parse_expression(pair)?;
+            Ok(TopLevelItem::Expression(expression))
+        }
+        _ => unreachable!("unknown top level: {pair:?}"),
+    }
+}
+
 static PRATT_PARSER: OnceLock<PrattParser<Rule>> = OnceLock::new();
 
 fn pratt_parser() -> &'static PrattParser<Rule> {
@@ -700,93 +718,85 @@ mod test {
     #[test]
     fn test_let_statement() {
         let input = r#"let a = 1;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Let(LetStatement {
+            TopLevelItem::Statement(Statement::Let(LetStatement {
                 name: "a".to_string(),
                 ty: None,
                 value: Some(Expression::Literal(LiteralExpression::Integer(1))),
-            })
+            }))
         );
     }
 
     #[test]
     fn test_let_statement_with_type() {
         let input = r#"let a: int = 1;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Let(LetStatement {
+            TopLevelItem::Statement(Statement::Let(LetStatement {
                 name: "a".to_string(),
                 ty: Some(TypeExpression::Integer),
                 value: Some(Expression::Literal(LiteralExpression::Integer(1))),
-            })
+            }))
         );
     }
 
     #[test]
     fn test_empty_statement() {
         let input = r#";"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
-        assert_eq!(statement, Statement::Empty);
+        let statement = parse_top_level(input).unwrap();
+        assert_eq!(statement, TopLevelItem::Statement(Statement::Empty));
     }
 
     #[test]
     fn test_break_statement() {
         let input = r#"break;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
-        assert_eq!(statement, Statement::Break);
+        let statement = parse_top_level(input).unwrap();
+        assert_eq!(statement, TopLevelItem::Statement(Statement::Break));
     }
 
     #[test]
     fn test_continue_statement() {
         let input = r#"continue;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
-        assert_eq!(statement, Statement::Continue);
+        let statement = parse_top_level(input).unwrap();
+        assert_eq!(statement, TopLevelItem::Statement(Statement::Continue));
     }
 
     #[test]
     fn test_return_statement() {
         let input = r#"return 1;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Return(ReturnStatement {
+            TopLevelItem::Statement(Statement::Return(ReturnStatement {
                 value: Some(Expression::Literal(LiteralExpression::Integer(1))),
-            })
+            }))
         );
     }
 
     #[test]
     fn test_expression_statement() {
         let input = r#"1 + 2;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Expression(Expression::Binary(
+            TopLevelItem::Statement(Statement::Expression(Expression::Binary(
                 BinOp::Add,
                 Box::new(Expression::Literal(LiteralExpression::Integer(1))),
                 Box::new(Expression::Literal(LiteralExpression::Integer(2))),
-            ))
+            )))
         );
     }
 
     #[test]
     fn test_for_statement() {
         let input = r#"for i in 0..10 {}"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::For(ForStatement {
+            TopLevelItem::Statement(Statement::For(ForStatement {
                 pat: Pattern::Identifier("i".to_string()),
                 iterable: Expression::Binary(
                     BinOp::Range,
@@ -794,31 +804,29 @@ mod test {
                     Box::new(Expression::Literal(LiteralExpression::Integer(10))),
                 ),
                 body: vec![],
-            })
+            }))
         );
     }
 
     #[test]
     fn test_loop_statement() {
         let input = r#"loop { break; }"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Loop(LoopStatement {
+            TopLevelItem::Statement(Statement::Loop(LoopStatement {
                 body: vec![Statement::Break],
-            })
+            }))
         );
     }
 
     #[test]
     fn test_if_statement() {
         let input = r#"if a == 1 { return 1; }"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::If(IfStatement {
+            TopLevelItem::Statement(Statement::If(IfStatement {
                 condition: Expression::Binary(
                     BinOp::Equal,
                     Box::new(Expression::Identifier(IdentifierExpression(
@@ -830,16 +838,15 @@ mod test {
                     value: Some(Expression::Literal(LiteralExpression::Integer(1))),
                 })],
                 else_branch: None,
-            })
+            }))
         );
 
         // 新增测试用例：if语句带else分支
         let input = r#"if a == 2 { return 2; } else { return 3; }"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::If(IfStatement {
+            TopLevelItem::Statement(Statement::If(IfStatement {
                 condition: Expression::Binary(
                     BinOp::Equal,
                     Box::new(Expression::Identifier(IdentifierExpression(
@@ -853,18 +860,17 @@ mod test {
                 else_branch: Some(vec![Statement::Return(ReturnStatement {
                     value: Some(Expression::Literal(LiteralExpression::Integer(3))),
                 })]),
-            })
+            }))
         );
 
         // 新增测试用例：更复杂的条件表达式
         let input = r#"if a > 0 && b < 10 { return 4; }"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::If(IfStatement {
+            TopLevelItem::Statement(Statement::If(IfStatement {
                 condition: Expression::Binary(
-                    BinOp::And,
+                    BinOp::LogicAnd,
                     Box::new(Expression::Binary(
                         BinOp::Greater,
                         Box::new(Expression::Identifier(IdentifierExpression(
@@ -884,18 +890,17 @@ mod test {
                     value: Some(Expression::Literal(LiteralExpression::Integer(4))),
                 })],
                 else_branch: None,
-            })
+            }))
         );
     }
 
     #[test]
     fn test_enum_item() {
-        let input = r#"enum A { AA, BB(int, float), }"#;
-        let mut pairs = PestParser::parse(Rule::item_statement, input).unwrap();
-        let item_statement = parse_item_statement(pairs.next().unwrap()).unwrap();
+        let input = r#"enum A { AA, BB(int, float) }"#;
+        let item_statement = parse_top_level(input).unwrap();
         assert_eq!(
             item_statement,
-            ItemStatement::Enum(EnumItem {
+            TopLevelItem::Statement(Statement::Item(ItemStatement::Enum(EnumItem {
                 name: "A".to_string(),
                 variants: vec![
                     EnumVariant::Simple("AA".to_string()),
@@ -904,18 +909,17 @@ mod test {
                         vec![TypeExpression::Integer, TypeExpression::Float,]
                     ),
                 ],
-            })
+            })))
         );
     }
 
     #[test]
     fn test_struct_item() {
-        let input = r#"struct A { a: int, b: float, }"#;
-        let mut pairs = PestParser::parse(Rule::item_statement, input).unwrap();
-        let item_statement = parse_item_statement(pairs.next().unwrap()).unwrap();
+        let input = r#"struct A { a: int, b: float }"#;
+        let item_statement = parse_top_level(input).unwrap();
         assert_eq!(
             item_statement,
-            ItemStatement::Struct(StructItem {
+            TopLevelItem::Statement(Statement::Item(ItemStatement::Struct(StructItem {
                 name: "A".to_string(),
                 fields: vec![
                     StructField {
@@ -927,18 +931,17 @@ mod test {
                         ty: TypeExpression::Float,
                     },
                 ],
-            })
+            })))
         );
     }
 
     #[test]
     fn test_function_item() {
         let input = r#"fn A(a: int, b: float) -> int { return a + b; }"#;
-        let mut pairs = PestParser::parse(Rule::item_statement, input).unwrap();
-        let item_statement = parse_item_statement(pairs.next().unwrap()).unwrap();
+        let item_statement = parse_top_level(input).unwrap();
         assert_eq!(
             item_statement,
-            ItemStatement::Fn(FunctionItem {
+            TopLevelItem::Statement(Statement::Item(ItemStatement::Fn(FunctionItem {
                 name: "A".to_string(),
                 params: vec![
                     FunctionParam {
@@ -962,7 +965,7 @@ mod test {
                         ))),
                     )),
                 }),],
-            })
+            })))
         );
     }
 
@@ -1133,7 +1136,6 @@ mod test {
             })
         );
 
-
         let input = r#"a[..=3]"#;
         let pairs = PestParser::parse(Rule::expression, input).unwrap();
         let expression = parse_expression_pairs(pairs).unwrap();
@@ -1169,17 +1171,16 @@ mod test {
     #[test]
     fn test_try_expression() {
         let input = r#"f()?;"#;
-        let mut pairs = PestParser::parse(Rule::statement, input).unwrap();
-        let statement = parse_statement(pairs.next().unwrap()).unwrap();
+        let statement = parse_top_level(input).unwrap();
         assert_eq!(
             statement,
-            Statement::Expression(Expression::Try(Box::new(Expression::Call(
-                CallExpression {
+            TopLevelItem::Statement(Statement::Expression(Expression::Try(Box::new(
+                Expression::Call(CallExpression {
                     func: Box::new(Expression::Identifier(IdentifierExpression(
                         "f".to_string()
                     ))),
                     args: vec![],
-                }
+                })
             ))))
         );
     }

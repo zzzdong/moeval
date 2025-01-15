@@ -1,5 +1,8 @@
 program = { SOI ~ (statement)* ~ EOI }
 
+/// Top level
+top_level = { statement | expression }
+
 /// Statement
 statement = {
     empty_statement
@@ -22,9 +25,9 @@ empty_statement = { ";" }
 item_statement = { fn_item | struct_item | enum_item }
 
 /// Struct Item
-struct_item = { "struct" ~ identifier ~ "{" ~ struct_field_list? ~ "}" }
+struct_item = { "struct" ~ identifier ~ "{" ~ (struct_field_list ~ ","?)? ~ "}" }
 
-struct_field_list = { (struct_field ~ ",")* }
+struct_field_list = { struct_field ~ ("," ~ struct_field)* }
 struct_field      = { identifier ~ ":" ~ type_expression }
 
 /// Function Item
@@ -39,9 +42,9 @@ fn_param = { identifier ~ (":" ~ type_expression)? }
 fn_return_type = { ("->" ~ type_expression)? }
 
 /// Enum Item
-enum_item = { "enum" ~ identifier ~ "{" ~ enum_item_list? ~ "}" }
+enum_item = { "enum" ~ identifier ~ "{" ~ (enum_item_list ~ ","?)? ~ "}" }
 
-enum_item_list = { (enum_field ~ ",")* }
+enum_item_list = { enum_field ~ ("," ~ enum_field)* }
 
 enum_field = { simple_enum_field | tuple_enum_field }
 

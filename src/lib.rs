@@ -8,6 +8,6 @@ mod vm;
 pub use error::Error;
 pub use interpreter::Interpreter;
 pub use vm::{
-    Array, Environment, Map, NativeFunction, Object, Promise, RuntimeError, Tuple,
-    Undefined, Value, ValueRef,
+    Array, Environment, Map, NativeFunction, Null, Object, Promise, RuntimeError, Tuple, Value,
+    ValueRef,
 };

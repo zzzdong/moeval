@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::Deref};
 
-use crate::vm::{Stack, Environment, Value, ValueRef};
+use crate::vm::{Environment, Stack, Value, ValueRef};
 use crate::{
     compiler::Compiler,
     ir::{Instruction, Instructions, Module, Opcode, Operand},

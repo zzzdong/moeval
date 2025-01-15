@@ -9,5 +9,4 @@ pub use instpass::{InstPassManager, SimplifyPass};
 pub use instruction::{Instruction, Opcode, Operand};
 pub use types::{
     BlockId, FuncParam, FuncSignature, Function, FunctionId, Inst, Instructions, Module, Name,
-    Primitive,
 };

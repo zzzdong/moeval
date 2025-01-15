@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::ir::*;
+use crate::vm::Primitive;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

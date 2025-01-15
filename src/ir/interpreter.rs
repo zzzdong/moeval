@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::ir::{BlockId, ControlFlowGraph, FunctionId, Inst, Instruction, Opcode, Operand};
 use crate::vm::{
     Array, CallLocation, Callable, Enumerator, Map, NativeFunction, Object, Range, RuntimeError,
-    SliceIndex, Value, ValueRef, UserFunction,
+    SliceIndex, UserFunction, Value, ValueRef,
 };
 
 pub struct Environment {

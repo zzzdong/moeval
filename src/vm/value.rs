@@ -7,9 +7,8 @@ use std::{
 
 use bevy_utils::syncunsafecell::SyncUnsafeCell;
 
-use super::object::{Object, Undefined};
+use super::object::{Null, Object};
 use super::RuntimeError;
-use crate::ir::Primitive;
 
 #[derive(Debug)]
 pub struct Value(Box<dyn Object + Sync + Send>);
@@ -65,19 +64,62 @@ impl Value {
     // FIXME: stupid
     pub(crate) fn from_primitive(value: Primitive) -> Value {
         match value {
-            Primitive::Undefined => Value::new(Undefined),
+            Primitive::Null => Value::new(Null),
             Primitive::Boolean(value) => Value::new(value),
             Primitive::Integer(value) => Value::new(value),
             Primitive::Float(value) => Value::new(value),
+            Primitive::Char(value) => Value::new(value),
             Primitive::String(value) => Value::new(value),
             _ => unimplemented!(),
         }
     }
 }
 
+#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
+pub enum Primitive {
+    #[default]
+    Null,
+    Boolean(bool),
+    Byte(u8),
+    Integer(i64),
+    Float(f64),
+    Char(char),
+    String(String),
+}
+
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Primitive::Boolean(b) => write!(f, "{}", b),
+            Primitive::Byte(b) => write!(f, "{}", b),
+            Primitive::Integer(i) => write!(f, "{}", i),
+            Primitive::Float(ff) => write!(f, "{}", ff),
+            Primitive::Char(c) => write!(f, "{}", c),
+            Primitive::String(s) => write!(f, "{}", s),
+            Primitive::Null => write!(f, "null"),
+        }
+    }
+}
+
+impl Eq for Primitive {}
+
+impl std::hash::Hash for Primitive {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Primitive::Boolean(b) => b.hash(state),
+            Primitive::Byte(b) => b.hash(state),
+            Primitive::Integer(i) => i.hash(state),
+            Primitive::Float(f) => f.to_bits().hash(state),
+            Primitive::Char(c) => c.hash(state),
+            Primitive::String(s) => s.hash(state),
+            Primitive::Null => 1.hash(state),
+        }
+    }
+}
+
 impl Default for Value {
     fn default() -> Self {
-        Value::new(Undefined)
+        Value::new(Null)
     }
 }
 
@@ -96,7 +138,7 @@ impl<T: Object + Sync + Send> From<T> for Value {
 impl From<Primitive> for Value {
     fn from(value: Primitive) -> Self {
         match value {
-            Primitive::Undefined => Value::new(Undefined),
+            Primitive::Null => Value::new(Null),
             Primitive::Boolean(value) => Value::new(value),
             Primitive::Integer(value) => Value::new(value),
             Primitive::Float(value) => Value::new(value),
@@ -119,9 +161,9 @@ impl DerefMut for Value {
     }
 }
 
-impl PartialEq<Undefined> for Value {
-    fn eq(&self, other: &Undefined) -> bool {
-        match self.downcast_ref::<Undefined>() {
+impl PartialEq<Null> for Value {
+    fn eq(&self, other: &Null) -> bool {
+        match self.downcast_ref::<Null>() {
             Some(b) => *b == *other,
             None => false,
         }
@@ -209,9 +251,9 @@ impl From<Value> for ValueRef {
     }
 }
 
-impl PartialEq<Undefined> for ValueRef {
-    fn eq(&self, other: &Undefined) -> bool {
-        match self.get().downcast_ref::<Undefined>() {
+impl PartialEq<Null> for ValueRef {
+    fn eq(&self, other: &Null) -> bool {
+        match self.get().downcast_ref::<Null>() {
             Some(b) => *b == *other,
             None => false,
         }
@@ -240,6 +282,15 @@ impl PartialEq<f64> for ValueRef {
     fn eq(&self, other: &f64) -> bool {
         match self.get().downcast_ref::<f64>() {
             Some(f) => f == other,
+            None => false,
+        }
+    }
+}
+
+impl PartialEq<char> for ValueRef {
+    fn eq(&self, other: &char) -> bool {
+        match self.get().downcast_ref::<char>() {
+            Some(s) => s == other,
             None => false,
         }
     }

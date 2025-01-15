@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use super::{Value, ValueRef, Callable, NativeFunction};
-
+use super::{Callable, NativeFunction, Value, ValueRef};
 
 pub struct Environment {
     symbols: HashMap<String, ValueRef>,
