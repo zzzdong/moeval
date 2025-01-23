@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use bevy_utils::tracing::level_filters;
 
 use crate::{
-    vm::{Environment, Primitive},
-    Error, Null, RuntimeError, Value, ValueRef,
+    vm::{Enumerator, Environment, Primitive, Range},
+    Error, Null, Object, RuntimeError, Value, ValueRef,
 };
 
 use super::{ast::*, parse_file};
@@ -45,10 +44,12 @@ impl Variables {
     }
 }
 
+#[derive(Debug, Clone)]
 enum ControlFlow {
     Next,
+    Break,
+    Continue,
     Return(Option<ValueRef>),
-    Halt,
 }
 
 pub struct Interpreter {
@@ -90,32 +91,22 @@ impl Interpreter {
             }
         }
 
+        self.eval_statements(&stmts)?;
+
         Ok(())
     }
 
-    fn eval_statements(
-        &mut self,
-        mut pos: usize,
-        stmts: Vec<Statement>,
-    ) -> Result<ControlFlow, Error> {
-        loop {
-            if pos >= stmts.len() {
-                return Ok(ControlFlow::Halt);
-            }
+    fn eval_statements(&mut self, stmts: &[Statement]) -> Result<ControlFlow, Error> {
+        self.variables.scopes.push(HashMap::new());
 
-            let ret = self.eval_statement(&stmts[pos])?;
-
-            match ret {
+        for stmt in stmts {
+            match self.eval_statement(stmt)? {
                 ControlFlow::Next => {}
-                ControlFlow::Return(_) => {
-                    return Ok(ret);
-                }
-                _ => {
-                    unimplemented!("unsupported control flow")
-                }
+                control => return Ok(control),
             }
-            pos += 1;
         }
+
+        Ok(ControlFlow::Next)
     }
 
     fn eval_statement(&mut self, stmt: &Statement) -> Result<ControlFlow, Error> {
@@ -141,7 +132,67 @@ impl Interpreter {
                 }
                 None => return Ok(ControlFlow::Return(None)),
             },
-            _ => unimplemented!("unsupported statement"),
+            Statement::If(IfStatement {
+                condition,
+                then_branch,
+                else_branch,
+            }) => {
+                let condition = self.eval_expression(condition)?;
+                if condition == true {
+                    return self.eval_statements(then_branch);
+                } else if let Some(else_branch) = else_branch {
+                    return self.eval_statements(else_branch);
+                }
+
+                Ok(ControlFlow::Next)
+            }
+            Statement::For(ForStatement {
+                pat,
+                iterable,
+                body,
+            }) => {
+                let iterable = self.eval_expression(iterable)?;
+                let mut iterable = Enumerator::new(iterable.get().make_iterator()?);
+
+                loop {
+                    if iterable.iterator_has_next()? == false {
+                        break;
+                    }
+
+                    let value = iterable.iterate_next()?;
+                    match pat {
+                        Pattern::Identifier(ident) => {
+                            self.variables.define(ident.clone(), value);
+                        }
+                        Pattern::Wildcard => {}
+                        _ => unimplemented!("unsupported pattern: {:?}", pat),
+                    };
+
+                    match self.eval_statements(body)? {
+                        ControlFlow::Break => {
+                            break;
+                        }
+                        ControlFlow::Continue => {
+                            continue;
+                        }
+                        ControlFlow::Next => {}
+                        ControlFlow::Return(val) => return Ok(ControlFlow::Return(val)),
+                    }
+                }
+
+                Ok(ControlFlow::Next)
+            }
+            Statement::Break => {
+                return Ok(ControlFlow::Break);
+            }
+            Statement::Continue => {
+                return Ok(ControlFlow::Continue);
+            }
+            Statement::Expression(expr) => {
+                self.eval_expression(expr)?;
+                Ok(ControlFlow::Next)
+            }
+            _ => unimplemented!("unsupported statement: {:?}", stmt),
         }
     }
 
@@ -156,7 +207,50 @@ impl Interpreter {
                 .ok_or_else(|| RuntimeError::symbol_not_found(ident.0.as_str()).into()),
 
             Expression::Binary(ref op, left, right) => self.eval_binary_expression(op, left, right),
-            _ => unimplemented!("unsupported expression"),
+            Expression::Assign(AssignExpression { object, value, op }) => {
+                let value = self.eval_expression(value)?;
+                match object.as_ref() {
+                    Expression::Identifier(ident) => match op {
+                        Some(op) => {
+                            let old_value = self.variables.get(ident.0.as_str()).unwrap();
+                            match op {
+                                BinOp::Add => {
+                                    let new_value = old_value.get().add(&value.get()).unwrap();
+                                    self.variables.set(ident.0.as_str(), new_value.into());
+                                    Ok(ValueRef::new(Null.into()))
+                                }
+                                BinOp::Sub => {
+                                    let new_value = old_value.get().sub(&value.get()).unwrap();
+                                    self.variables.set(ident.0.as_str(), new_value.into());
+                                    Ok(ValueRef::new(Null.into()))
+                                }
+                                BinOp::Mul => {
+                                    let new_value = old_value.get().mul(&value.get()).unwrap();
+                                    self.variables.set(ident.0.as_str(), new_value.into());
+                                    Ok(ValueRef::new(Null.into()))
+                                }
+                                BinOp::Div => {
+                                    let new_value = old_value.get().div(&value.get()).unwrap();
+                                    self.variables.set(ident.0.as_str(), new_value.into());
+                                    Ok(ValueRef::new(Null.into()))
+                                }
+                                BinOp::Mod => {
+                                    let new_value = old_value.get().modulo(&value.get()).unwrap();
+                                    self.variables.set(ident.0.as_str(), new_value.into());
+                                    Ok(ValueRef::new(Null.into()))
+                                }
+                                _ => unimplemented!("unsupported binary operator: {:?}", op),
+                            }
+                        }
+                        None => {
+                            self.variables.set(ident.0.as_str(), value);
+                            Ok(ValueRef::new(Null.into()))
+                        }
+                    },
+                    _ => unimplemented!("unsupported assignment expression: {:?}", object),
+                }
+            }
+            _ => unimplemented!("unsupported expression: {:?}", expr),
         }
     }
 
@@ -244,7 +338,15 @@ impl Interpreter {
             BinOp::GreaterEqual => Value::new(left.get().compare(right.get())?.is_ge()),
             BinOp::Less => Value::new(left.get().compare(right.get())?.is_lt()),
             BinOp::LessEqual => Value::new(left.get().compare(right.get())?.is_le()),
-            _ => unimplemented!("unsupported binary operator"),
+            BinOp::Range => {
+                let range = Range::new(left.clone(), right.clone(), false)?;
+                Value::new(range)
+            }
+            BinOp::RangeInclusive => {
+                let range = Range::new(left.clone(), right.clone(), true)?;
+                Value::new(range)
+            }
+            _ => unimplemented!("unsupported binary operator: {:?}", op),
         };
         Ok(value.into())
     }
@@ -482,5 +584,90 @@ mod tests {
         assert_eq!(value, Null);
         let var_value = interp.variables.get("a").unwrap();
         assert_eq!(var_value, 1);
+    }
+
+    // 添加对 if 语句的测试用例
+    #[test]
+    fn test_eval_if_statement() {
+        let mut interp = Interpreter::new();
+
+        // 测试简单的 if 语句
+        let script = r#"
+            let a = 1;
+            if a == 1 {
+                a = 2;
+            }
+        "#;
+        interp.eval(script).unwrap();
+        let var_value = interp.variables.get("a").unwrap();
+        assert_eq!(var_value, 2);
+
+        // 测试 if-else 语句
+        let script = r#"
+            let a = 1;
+            if a == 2 {
+                a = 2;
+            } else {
+                a = 3;
+            }
+        "#;
+        interp.eval(script).unwrap();
+        let var_value = interp.variables.get("a").unwrap();
+        assert_eq!(var_value, 3);
+    }
+
+    // 添加对 for 循环的测试用例
+    #[test]
+    fn test_eval_for_loop() {
+        let mut interp = Interpreter::new();
+
+        // 测试简单的 for 循环
+        let script = r#"
+            let a = 0;
+            for i in 0..3 {
+                a = a + 1;
+            }
+        "#;
+        interp.eval(script).unwrap();
+        let var_value = interp.variables.get("a").unwrap();
+        assert_eq!(var_value, 3);
+    }
+
+    #[test]
+    fn test_eval_for_loop_with_break() {
+        let mut interp = Interpreter::new();
+
+        // 测试 for 循环中带有 break 语句
+        let script = r#"
+            let a = 0;
+            for i in 0..5 {
+                if i == 3 {
+                    break;
+                }
+                a = a + 1;
+            }
+        "#;
+        interp.eval(script).unwrap();
+        let var_value = interp.variables.get("a").unwrap();
+        assert_eq!(var_value, 3);
+    }
+
+    #[test]
+    fn test_eval_for_loop_with_continue() {
+        let mut interp = Interpreter::new();
+
+        // 测试 for 循环中带有 continue 语句
+        let script = r#"
+            let a = 0;
+            for i in 0..5 {
+                if i % 2 == 0 {
+                    continue;
+                }
+                a = a + 1;
+            }
+        "#;
+        interp.eval(script).unwrap();
+        let var_value = interp.variables.get("a").unwrap();
+        assert_eq!(var_value, 2);
     }
 }
