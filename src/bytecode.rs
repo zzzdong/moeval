@@ -220,8 +220,7 @@ pub enum Opcode {
     PropSet,
     /// call_method dst, obj, method
     CallMethod,
-    /// await dst, promise
-    Await,
+    
 }
 
 impl fmt::Display for Opcode {
@@ -278,7 +277,6 @@ impl fmt::Display for Opcode {
             Opcode::PropGet => write!(f, "prop_get"),
             Opcode::PropSet => write!(f, "prop_set"),
             Opcode::CallMethod => write!(f, "call_method"),
-            Opcode::Await => write!(f, "await"),
         }
     }
 }

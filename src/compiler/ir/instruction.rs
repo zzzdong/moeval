@@ -212,12 +212,6 @@ pub enum Instruction {
         rhs: Value,
     },
 
-    // Async Support
-    Await {
-        promise: Value,
-        dst: Value,
-    },
-
     // Function Call Instructions
     Call {
         func: Value,
@@ -373,7 +367,6 @@ impl Instruction {
                 lhs,
                 rhs,
             } => (vec![*dst], vec![*lhs, *rhs]),
-            Instruction::Await { promise, dst } => (vec![*dst], vec![*promise]),
             Instruction::Call { func, args, result } => {
                 let mut used = vec![*func];
                 used.extend(args.iter().cloned());
@@ -491,9 +484,6 @@ impl std::fmt::Display for Instruction {
                 write!(f, "{dst} = {op} {lhs}, {rhs}")
             }
 
-            Instruction::Await { promise, dst } => {
-                write!(f, "{dst} = await {promise}")
-            }
             Instruction::Call {
                 func,
                 args,

@@ -227,7 +227,6 @@ pub enum Expression {
     Assign(AssignExpression),
     Call(CallExpression),
     Try(Box<ExpressionNode>),
-    Await(Box<ExpressionNode>),
     Prefix(PrefixExpression),
     Binary(BinaryExpression),
     IndexGet(IndexGetExpression),
@@ -403,7 +402,6 @@ pub struct PrefixExpression {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PostfixOp {
-    Await,
     Try,
 }
 

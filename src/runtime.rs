@@ -10,13 +10,11 @@ use crate::bytecode::{Operand, Register};
 use object::OperateKind;
 
 pub use environment::{EnvVariable, Environment};
-#[cfg(feature = "async")]
-pub use object::Promise;
 pub use object::{Callable, Enumerator, NativeFunction, Null, Object, Range};
 pub use value::{Value, ValueRef};
 pub use vm::VM;
 
-pub(crate) use object::{Immd, UserFunction};
+pub(crate) use object::UserFunction;
 
 #[derive(Debug, PartialEq)]
 pub enum RuntimeError {
@@ -27,8 +25,7 @@ pub enum RuntimeError {
         message: String,
     },
     InvalidType {
-        expected: &'static str,
-        got: String,
+        expected: &'static str,        got: String,
     },
     InvalidArgumentCount {
         expected: usize,
@@ -216,3 +213,4 @@ impl std::fmt::Display for RuntimeError {
 }
 
 impl std::error::Error for RuntimeError {}
+

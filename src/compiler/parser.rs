@@ -115,7 +115,6 @@ fn pratt_parser() -> &'static PrattParser<Rule> {
             .op(Op::infix(Rule::as_operator, Assoc::Left))
             .op(Op::infix(Rule::dot_operator, Assoc::Left))
             .op(Op::postfix(Rule::try_operator)
-                | Op::postfix(Rule::await_operator)
                 | Op::postfix(Rule::member_operator)
                 | Op::postfix(Rule::call_operator)
                 | Op::postfix(Rule::index_operator))
@@ -683,7 +682,7 @@ fn parse_postfix(lhs: Result<ExpressionNode>, op: Pair<Rule>) -> Result<Expressi
 
             Expression::Slice(expr)
         }
-        Rule::await_operator => Expression::Await(object),
+        
         _ => unreachable!("unknown postfix: {:?}", op),
     };
 
@@ -1260,18 +1259,6 @@ mod test {
             check_identifier_expression(&expr, "a");
         } else {
             panic!("Expected try expression");
-        }
-    }
-
-    #[test]
-    fn test_await_expression() {
-        let input = r#"a.await"#;
-        let pairs = PestParser::parse(Rule::expression, input).unwrap();
-        let expression = parse_expression_pairs(pairs).unwrap();
-        if let Expression::Await(expr) = expression.node {
-            check_identifier_expression(&expr, "a");
-        } else {
-            panic!("Expected await expression");
         }
     }
 

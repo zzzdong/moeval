@@ -291,7 +291,6 @@ impl<'a> SemanticAnalyzer<'a> {
             Expression::Range(expr) => self.analyze_range_expression(expr),
             Expression::Slice(expr) => self.analyze_slice_expression(expr),
             Expression::Try(expr) => self.analyze_try_expression(expr),
-            Expression::Await(expr) => self.analyze_await_expression(expr),
             Expression::CallMethod(expr) => self.analyze_call_method_expression(expr),
             _ => {
                 // 处理其他未实现的表达式类型
@@ -427,12 +426,6 @@ impl<'a> SemanticAnalyzer<'a> {
     }
 
     fn analyze_try_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
-        self.analyze_expression(expr)?;
-
-        Ok(())
-    }
-
-    fn analyze_await_expression(&mut self, expr: &ExpressionNode) -> Result<(), SemanticError> {
         self.analyze_expression(expr)?;
 
         Ok(())

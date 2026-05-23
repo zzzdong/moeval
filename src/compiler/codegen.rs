@@ -435,14 +435,6 @@ impl Codegen {
                     Instruction::Halt => {
                         self.codes.push(Bytecode::empty(Opcode::Halt));
                     }
-
-                    // Async Support
-                    Instruction::Await { promise, dst } => {
-                        let promise = self.gen_operand(promise);
-                        let dst = self.gen_operand(dst);
-                        self.codes
-                            .push(Bytecode::double(Opcode::Await, dst, promise));
-                    }
                 }
 
                 self.inst_index += 1;

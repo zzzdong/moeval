@@ -17,13 +17,10 @@ keywords = ["interpreter", "scripting"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["async"]
-async = [ "futures", "parking_lot" ]
+default = []
 
 [dependencies]
-futures = { version = "0.3", optional = true }
 log = "0.4"
-parking_lot = { version = "0.12", optional = true }
 pest = "2"
 pest_derive = "2"
 petgraph = "0.8"

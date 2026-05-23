@@ -16,11 +16,11 @@ fn main() {
     return sum;
     "#;
 
-    let retval = eval::<i64>(script, env).unwrap();
+    let retval = eval(script, env).unwrap();
 
     println!("ret: {retval:?}");
 
-    assert_eq!(retval, Some(55));
+    assert_eq!(retval, Some(evalit::Value::Int(55)));
 }
 
 fn println(args: &[ValueRef]) {

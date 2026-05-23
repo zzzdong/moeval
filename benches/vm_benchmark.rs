@@ -12,19 +12,7 @@ fn run_script(code: &str) -> Result<(), String> {
 fn run_vm<T: Object>(program: Arc<Module>, env: Environment) -> T {
     let mut vm = VM::new(program, env);
 
-    #[cfg(not(feature = "async"))]
-    return vm.run().unwrap().unwrap().take().into_inner().unwrap();
-
-    #[cfg(feature = "async")]
-    return futures::executor::block_on(async {
-        vm.run()
-            .await
-            .unwrap()
-            .unwrap()
-            .take()
-            .into_inner()
-            .unwrap()
-    });
+    vm.run().unwrap().unwrap().take().into_inner().unwrap()
 }
 
 fn bench_simple_math(c: &mut Criterion) {

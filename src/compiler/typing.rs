@@ -346,7 +346,6 @@ impl TypeContext {
                 },
                 None => Type::Unknown,
             },
-            _ => Type::Unknown,
         }
     }
 
@@ -598,7 +597,6 @@ impl<'a> TypeChecker<'a> {
             Expression::PropertySet(prop) => self.check_property_set(prop),
             Expression::CallMethod(call) => self.check_call_method(call),
             Expression::StructExpr(struct_) => self.check_struct_expr(struct_),
-            Expression::Await(expr) => self.check_expression(expr),
             Expression::Try(expr) => self.check_expression(expr),
             // _ => Err(ErrKind::Message(format!("Unsupported expression: {:?}", expr.node)).into()),
         };

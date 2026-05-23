@@ -435,10 +435,6 @@ impl<'a> SSABuilder<'a> {
                 SSABuilder::rename_use(lhs, stacks);
                 SSABuilder::rename_use(rhs, stacks);
             }
-            Instruction::Await { promise, dst } => {
-                SSABuilder::rename_definition(dst, new_versions);
-                SSABuilder::rename_use(promise, stacks);
-            }
             Instruction::Call { func, args, result } => {
                 SSABuilder::rename_definition(result, new_versions);
                 SSABuilder::rename_use(func, stacks);

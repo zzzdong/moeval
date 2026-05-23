@@ -4,8 +4,6 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(feature = "async")]
-use super::Promise;
 use super::{
     Enumerator, EnvVariable, Environment, NativeFunction, Object, Range, RuntimeError,
     UserFunction, Value, object::StructObject, value::ValueRef,
@@ -31,52 +29,6 @@ impl VM {
         }
     }
 
-    #[cfg(feature = "async")]
-    pub async fn run(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
-        debug!("{}", self.program);
-
-        while let Some(inst) = self.program.instructions.get(self.state.pc).cloned() {
-            // debug!("{inst}, {}", self.state);
-
-            let Bytecode { opcode, operands } = inst;
-
-            match opcode {
-                Opcode::Halt => {
-                    let ret = self.get_value(Operand::Register(Register::Rv))?;
-                    return Ok(Some(ret));
-                }
-
-                Opcode::Ret => {
-                    if self.state.ctrl_stack_reached_bottom() {
-                        let ret = self.get_value(Operand::Register(Register::Rv))?;
-                        return Ok(Some(ret));
-                    }
-                    let pc = self.state.popc()?;
-
-                    self.state.jump(pc);
-                }
-
-                Opcode::Await => {
-                    let promise = self.get_value(operands[1])?;
-                    let mut promise = promise.take();
-                    let promise = promise
-                        .downcast_mut::<Promise>()
-                        .ok_or(RuntimeError::internal("only can await promise"))?;
-                    let ret = promise.await;
-                    self.set_value(operands[0], ret)?;
-                    self.state.jump_offset(1);
-                }
-
-                _ => {
-                    self.run_instruction(&inst)?;
-                }
-            }
-        }
-
-        Ok(None)
-    }
-
-    #[cfg(not(feature = "async"))]
     pub fn run(&mut self) -> Result<Option<ValueRef>, RuntimeError> {
         debug!("{}", self.program);
 
@@ -84,7 +36,7 @@ impl VM {
             debug!("{}", self.state);
             debug!("{inst:?}");
 
-            let Bytecode { opcode, operands } = inst;
+            let Bytecode { opcode, operands: _operands } = inst;
 
             match opcode {
                 Opcode::Halt => {
@@ -259,50 +211,50 @@ impl VM {
             Opcode::Addx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().add(&rhs.value())?;
+                let value = lhs.value().add(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
             Opcode::Subx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().sub(&rhs.value())?;
+                let value = lhs.value().sub(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
             Opcode::Mulx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().mul(&rhs.value())?;
+                let value = lhs.value().mul(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
             Opcode::Divx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().div(&rhs.value())?;
+                let value = lhs.value().div(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
             Opcode::Remx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().rem(&rhs.value())?;
+                let value = lhs.value().rem(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
 
             // Logical Operations
             Opcode::Not | Opcode::Neg => {
                 let value = self.get_value(operands[1])?;
-                let value = value.value().as_object().negate()?;
+                let value = value.value().negate()?;
                 self.set_value(operands[0], ValueRef::from(value))?;
             }
             Opcode::And => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().logic_and(&rhs.value())?;
+                let value = lhs.value().logic_and(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
             Opcode::Or => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let value = lhs.value().as_object().logic_or(&rhs.value())?;
+                let value = lhs.value().logic_or(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
 
@@ -310,7 +262,7 @@ impl VM {
             Opcode::Greater => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let ordering = lhs.value().as_object().compare(&rhs.value())?;
+                let ordering = lhs.value().compare(&rhs.value())?;
                 self.set_value(
                     operands[0],
                     ValueRef::new(ordering == std::cmp::Ordering::Greater),
@@ -319,7 +271,7 @@ impl VM {
             Opcode::GreaterEqual => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let ordering = lhs.value().as_object().compare(&rhs.value())?;
+                let ordering = lhs.value().compare(&rhs.value())?;
                 self.set_value(
                     operands[0],
                     ValueRef::new(
@@ -332,7 +284,7 @@ impl VM {
             Opcode::Less => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let ordering = lhs.value().as_object().compare(&rhs.value())?;
+                let ordering = lhs.value().compare(&rhs.value())?;
                 self.set_value(
                     operands[0],
                     ValueRef::new(ordering == std::cmp::Ordering::Less),
@@ -342,7 +294,7 @@ impl VM {
             Opcode::LessEqual => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let ordering = lhs.value().as_object().compare(&rhs.value())?;
+                let ordering = lhs.value().compare(&rhs.value())?;
                 self.set_value(
                     operands[0],
                     ValueRef::new(
@@ -355,15 +307,15 @@ impl VM {
             Opcode::Equal => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let eq = lhs.value().as_object().equal(&rhs.value())?;
+                let eq = lhs.value().equal(&rhs.value())?;
                 self.set_value(operands[0], eq)?;
             }
 
             Opcode::NotEqual => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
-                let eq = lhs.value().as_object().equal(&rhs.value())?;
-                let not_eq = !*eq.downcast_ref::<bool>().unwrap();
+                let eq = lhs.value().equal(&rhs.value())?;
+                let not_eq = !eq.to_bool().unwrap();
                 self.set_value(operands[0], Value::new(not_eq))?;
             }
 
@@ -418,7 +370,11 @@ impl VM {
                 let object = self.get_value(operands[1])?;
                 let range = self.get_value(operands[2])?;
 
-                let slice = object.value().as_object().make_slice(range)?;
+                let slice = object.value().as_object()
+                    .ok_or_else(|| RuntimeError::invalid_operation(
+                        super::object::OperateKind::MakeSlice, "not an object"
+                    ))?
+                    .make_slice(range)?;
                 self.set_value(operands[0], slice)?;
             }
 
@@ -450,7 +406,11 @@ impl VM {
             Opcode::IndexGet => {
                 let object = self.get_value(operands[1])?;
                 let index = self.get_value(operands[2])?;
-                let value = object.value().as_object().index_get(&index.value())?;
+                let value = object.value().as_object()
+                    .ok_or_else(|| RuntimeError::invalid_operation(
+                        super::object::OperateKind::IndexGet, "not an object"
+                    ))?
+                    .index_get(&index.value())?;
                 self.set_value(operands[0], value)?;
             }
 
@@ -458,7 +418,11 @@ impl VM {
                 let object = self.get_value(operands[1])?;
                 let prop = self.load_string(operands[2])?;
 
-                let value = object.value().as_object().property_get(&prop)?;
+                let value = object.value().as_object()
+                    .ok_or_else(|| RuntimeError::invalid_operation(
+                        super::object::OperateKind::PropertyGet, "not an object"
+                    ))?
+                    .property_get(&prop)?;
 
                 self.set_value(operands[0], value)?;
             }
@@ -516,7 +480,11 @@ impl VM {
                         self.set_value(operands[0], obj.clone())?;
                     }
                     None => {
-                        let iterator = obj.value().as_object().make_iterator()?;
+                        let iterator = obj.value().as_object()
+                            .ok_or_else(|| RuntimeError::invalid_operation(
+                                super::object::OperateKind::MakeIterator, "not an object"
+                            ))?
+                            .make_iterator()?;
                         self.set_value(operands[0], ValueRef::new(Enumerator::new(iterator)))?;
                     }
                 }

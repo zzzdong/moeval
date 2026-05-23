@@ -302,12 +302,7 @@ pub trait InstBuilder {
         object
     }
 
-    fn await_promise(&mut self, promise: Value) -> Value {
-        let dst = self.alloc();
-        self.emit(Instruction::Await { dst, promise });
-        dst
     }
-}
 
 #[derive(Debug)]
 pub struct IrBuilder<'a> {

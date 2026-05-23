@@ -7,7 +7,7 @@ use petgraph::{
     Direction,
     algo::{dominators::Dominators, kosaraju_scc, toposort},
     graph::{DiGraph, NodeIndex},
-    visit::{DfsPostOrder, EdgeRef},
+    visit::DfsPostOrder,
 };
 
 use super::instruction::*;

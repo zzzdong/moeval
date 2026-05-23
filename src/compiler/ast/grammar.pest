@@ -239,15 +239,12 @@ infix_operator = _{
 /// Possible modifiers for a rule.
 postfix = _{
     try_operator
-  | await_operator
+  
   | member_operator
   | call_operator
   | slice_operator
   | index_operator
 }
-
-/// Await Expression
-await_operator = @{ ".await" }
 
 /// Member Expression
 member_operator = { "." ~ identifier }
@@ -457,8 +454,6 @@ keywords = _{
   | "in"
   | "while"
   | "loop"
-  | "async"
-  | "await"
   | "dyn"
   | "gen"
   | "yield"

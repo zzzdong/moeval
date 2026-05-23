@@ -47,16 +47,6 @@ impl<T: Object + Clone> Object for Vec<T> {
         ))
     }
 
-    #[cfg(feature = "async")]
-    fn make_iterator(
-        &self,
-    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
-        Ok(Box::new(
-            self.clone().into_iter().map(|item| ValueRef::new(item)),
-        ))
-    }
-
-    #[cfg(not(feature = "async"))]
     fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
         Ok(Box::new(
             self.clone().into_iter().map(|item| ValueRef::new(item)),
@@ -186,14 +176,6 @@ impl Object for Vec<ValueRef> {
         ))
     }
 
-    #[cfg(feature = "async")]
-    fn make_iterator(
-        &self,
-    ) -> Result<Box<dyn Iterator<Item = ValueRef> + Send + Sync>, RuntimeError> {
-        Ok(Box::new(self.clone().into_iter()))
-    }
-
-    #[cfg(not(feature = "async"))]
     fn make_iterator(&self) -> Result<Box<dyn Iterator<Item = ValueRef>>, RuntimeError> {
         Ok(Box::new(self.clone().into_iter()))
     }
@@ -276,16 +258,6 @@ static ARRAY_METATABLE: std::sync::LazyLock<MetaTable<Vec<ValueRef>>> =
                 Err(RuntimeError::invalid_argument_count(1, args.len()))
             });
 
-        #[cfg(feature = "async")]
-        let table = table.with_method("iter", |this: &mut Vec<ValueRef>, args| {
-            if args.is_empty() {
-                let iter = this.clone().into_iter();
-                return Ok(Some(ValueRef::new(Enumerator::new(Box::new(iter)))));
-            }
-            Err(RuntimeError::invalid_argument_count(0, args.len()))
-        });
-
-        #[cfg(not(feature = "async"))]
         let table = table.with_method("iter", |this: &mut Vec<ValueRef>, args| {
             if args.is_empty() {
                 let iter = this.clone().into_iter();

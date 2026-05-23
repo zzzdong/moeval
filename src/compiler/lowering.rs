@@ -389,7 +389,6 @@ impl<'a> ASTLower<'a> {
             Expression::Array(array) => self.lower_array(array),
             Expression::Map(map) => self.lower_map(map),
             Expression::Slice(slice) => self.lower_slice(slice),
-            Expression::Await(expr) => self.lower_await(*expr),
             Expression::Environment(env) => self.lower_environment(env),
             Expression::IndexGet(expr) => self.lower_index_get(expr),
             Expression::IndexSet(expr) => self.lower_index_set(expr),
@@ -582,12 +581,6 @@ impl<'a> ASTLower<'a> {
         }
 
         map
-    }
-
-    fn lower_await(&mut self, expr: ExpressionNode) -> Value {
-        let promise = self.lower_expression(expr);
-
-        self.builder.await_promise(promise)
     }
 
     fn lower_range(&mut self, expr: RangeExpression) -> Value {
