@@ -220,7 +220,14 @@ pub enum Opcode {
     PropSet,
     /// call_method dst, obj, method
     CallMethod,
-    
+    /// try offset (SEH: register handler at offset)
+    Try,
+    /// end_try (SEH: unregister handler)
+    EndTry,
+    /// throw src (SEH: throw exception)
+    ThrowExc,
+    /// load_exception dst (SEH: load caught exception)
+    LoadException,
 }
 
 impl fmt::Display for Opcode {
@@ -277,6 +284,10 @@ impl fmt::Display for Opcode {
             Opcode::PropGet => write!(f, "prop_get"),
             Opcode::PropSet => write!(f, "prop_set"),
             Opcode::CallMethod => write!(f, "call_method"),
+            Opcode::Try => write!(f, "try"),
+            Opcode::EndTry => write!(f, "end_try"),
+            Opcode::ThrowExc => write!(f, "throw"),
+            Opcode::LoadException => write!(f, "load_exception"),
         }
     }
 }

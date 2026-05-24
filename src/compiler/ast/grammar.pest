@@ -16,6 +16,8 @@ statement = {
   | return_statement
   | continue_statement
   | break_statement
+  | try_statement
+  | throw_statement
   | expression_statement
 }
 
@@ -89,6 +91,12 @@ continue_statement = { "continue" ~ ";" }
 
 /// Break Statment
 break_statement = { "break" ~ ";" }
+
+/// Try Statment
+try_statement = { "try" ~ block ~ "catch" ~ pattern ~ block }
+
+/// Throw Statment
+throw_statement = { "throw" ~ expression ~ ";" }
 
 /// Block
 block = { "{" ~ (statement | expression)* ~ "}" }
@@ -446,7 +454,7 @@ keywords = _{
   | "try"
   | "catch"
   | "finally"
-  | "throw"
+  | "throw" // newly added
   | "return"
   | "if"
   | "else"

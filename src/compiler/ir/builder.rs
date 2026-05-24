@@ -28,6 +28,7 @@ pub trait InstBuilder {
 
     fn make_halt(&mut self) {
         self.emit(Instruction::Halt);
+        self.seal_block(self.current_block());
     }
 
     fn alloc(&mut self) -> Value {
@@ -300,6 +301,38 @@ pub trait InstBuilder {
         }
 
         object
+    }
+
+    fn push_seh(&mut self, handler: BlockId) {
+        self.emit(Instruction::PushSeh { handler });
+    }
+
+    fn pop_seh(&mut self) {
+        self.emit(Instruction::PopSeh);
+    }
+
+    fn add_exception_edge(&mut self, try_body: BlockId, catch: BlockId) {
+        self.control_flow_graph_mut().add_edge(try_body, catch);
+    }
+
+    fn throw_value(&mut self, value: Value) {
+        self.emit(Instruction::Throw {
+            value,
+            args: Vec::new(),
+        });
+    }
+
+    fn load_exception(&mut self) -> Value {
+        let dst = self.alloc();
+        self.emit(Instruction::LoadException { dst });
+        dst
+    }
+
+    /// 封存当前块并切换到目标块
+    fn seal_and_switch_to(&mut self, target: BlockId) {
+        let current = self.current_block();
+        self.seal_block(current);
+        self.switch_to_block(target);
     }
 
     }

@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use log::{debug, trace};
 
-use super::ir::{ControlFlowGraph, Instruction, Value};
+use super::ir::{BlockId, ControlFlowGraph, Instruction, Value};
 use crate::bytecode::{Bytecode, Opcode, Operand, Register};
 
 use super::regalloc::{Action, RegAlloc};
@@ -15,21 +15,31 @@ pub struct Codegen {
     block_map: HashMap<isize, isize>,
     inst_index: usize,
     insts: BTreeMap<usize, Instruction>,
+    throw_to_handlers: HashMap<BlockId, Vec<BlockId>>,
 }
 
 impl Codegen {
-    pub fn new(registers: &[Register]) -> Self {
+    pub fn new(registers: &[Register], throw_to_handlers: HashMap<BlockId, Vec<BlockId>>) -> Self {
         Self {
             reg_alloc: RegAlloc::new(registers),
             codes: Vec::new(),
             block_map: HashMap::new(),
             inst_index: 0,
             insts: BTreeMap::new(),
+            throw_to_handlers,
         }
     }
 
     pub fn generate_code(&mut self, cfg: ControlFlowGraph) -> &[Bytecode] {
         // debug ir
+        eprintln!("=== IR CFG ===");
+        for block in cfg.blocks() {
+            eprintln!("B{} (params: {:?}):", block.id(), block.params());
+            for inst in block.instructions() {
+                eprintln!("  {}", inst);
+            }
+        }
+        eprintln!("=== end IR ===");
         let block_layout = cfg.loop_root_reverse_postorder_layout2();
 
         self.reg_alloc.arrange(&cfg, &block_layout);
@@ -434,6 +444,75 @@ impl Codegen {
                     }
                     Instruction::Halt => {
                         self.codes.push(Bytecode::empty(Opcode::Halt));
+                    }
+                    Instruction::PushSeh { handler } => {
+                        let handler_id = handler.as_usize() as isize;
+                        let pos = self.codes.len();
+                        patchs.push(Box::new(move |this: &mut Self| {
+                            this.codes[pos].operands[0] = Operand::new_immd(
+                                this.block_map[&handler_id] - pos as isize,
+                            );
+                        }));
+                        self.codes.push(Bytecode::single(Opcode::Try, Operand::new_immd(0)));
+                    }
+                    Instruction::PopSeh => {
+                        self.codes.push(Bytecode::empty(Opcode::EndTry));
+                    }
+                    Instruction::Throw { value, args } => {
+                        // 为异常handler的phi参数生成mov指令
+                        // 仅处理异常handler后继块，忽略正常跳转目标（死代码）
+                        let handlers: Vec<BlockId> = self
+                            .throw_to_handlers
+                            .get(&block.id())
+                            .map(|h| h.clone())
+                            .unwrap_or_default();
+                        for &succ_id in cfg.get_successors(block.id()) {
+                            // 跳过非异常handler的后继块
+                            if !handlers.contains(&succ_id) {
+                                continue;
+                            }
+                            if let Some(succ_block) = cfg.get_block(succ_id) {
+                                let params = succ_block.params();
+                                if params.is_empty() {
+                                    continue;
+                                }
+                                // 这个后继块是catch handler，传递phi参数
+                                for (param, arg) in params.iter().zip(args.iter()) {
+                                    let arg_op = self.gen_operand(*arg);
+                                    if let Some(param_reg) = self.reg_alloc.get_register(param) {
+                                        self.codes.push(Bytecode::double(
+                                            Opcode::Mov,
+                                            param_reg.into(),
+                                            arg_op,
+                                        ));
+                                    } else if let Some(stack_offset) =
+                                        self.reg_alloc.get_stack_offset(param)
+                                    {
+                                        self.codes.push(Bytecode::double(
+                                            Opcode::Mov,
+                                            Operand::Stack(stack_offset as isize),
+                                            arg_op,
+                                        ));
+                                    } else {
+                                        let param_reg =
+                                            self.reg_alloc.alloc(*param, self.inst_index).0;
+                                        self.codes.push(Bytecode::double(
+                                            Opcode::Mov,
+                                            param_reg.into(),
+                                            arg_op,
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        let val = self.gen_operand(value);
+                        self.codes
+                            .push(Bytecode::single(Opcode::ThrowExc, val));
+                    }
+                    Instruction::LoadException { dst } => {
+                        let reg = self.gen_operand(dst);
+                        self.codes
+                            .push(Bytecode::single(Opcode::LoadException, reg));
                     }
                 }
 

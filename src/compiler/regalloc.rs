@@ -420,6 +420,18 @@ impl RegAlloc {
         self.liveness.stack_size()
     }
 
+    pub fn spill_all(&mut self) -> Vec<(Register, usize)> {
+        let mut spills = Vec::new();
+        for reg_entry in &self.reg_set.registers {
+            if let Some(var) = &reg_entry.variable {
+                if let Some(stack) = self.get_stack_offset(var) {
+                    spills.push((reg_entry.register, stack));
+                }
+            }
+        }
+        spills
+    }
+
     /// 获取变量被分配的栈偏移量，如果变量不在栈上则返回None
     pub fn get_stack_offset(&self, value: &Variable) -> Option<usize> {
         self.liveness

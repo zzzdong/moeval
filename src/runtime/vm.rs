@@ -49,9 +49,10 @@ impl VM {
                         let ret = self.get_value(Operand::Register(Register::Rv))?;
                         return Ok(Some(ret));
                     }
-                    let pc = self.state.popc()?;
-
-                    self.state.jump(pc);
+                    let return_pc = self.state.popc()?;
+                    let saved_seh_depth = self.state.popc()?;
+                    self.state.seh_stack.truncate(saved_seh_depth);
+                    self.state.jump(return_pc);
                 }
 
                 _ => {
@@ -72,6 +73,7 @@ impl VM {
                 let func = operands[0].as_immd();
                 match self.program.symtab.get(&FunctionId::new(func as u32)) {
                     Some(location) => {
+                        self.state.pushc(self.state.seh_stack.len())?;
                         self.state.pushc(self.state.pc() + 1)?;
                         self.state.jump(*location);
                         return Ok(());
@@ -86,6 +88,7 @@ impl VM {
             Opcode::CallEx => match operands[0] {
                 Operand::Symbol(sym) => match self.program.symtab.get(&FunctionId::new(sym)) {
                     Some(location) => {
+                        self.state.pushc(self.state.seh_stack.len())?;
                         self.state.pushc(self.state.pc() + 1)?;
                         self.state.jump(*location);
                         return Ok(());
@@ -101,6 +104,7 @@ impl VM {
                     match value.value().downcast_ref::<UserFunction>() {
                         Some(func) => match self.program.symtab.get(&func.id()) {
                             Some(location) => {
+                                self.state.pushc(self.state.seh_stack.len())?;
                                 self.state.pushc(self.state.pc() + 1)?;
                                 self.state.jump(*location);
                                 return Ok(());
@@ -145,6 +149,7 @@ impl VM {
             // Stack and Register Manipulation
             Opcode::Mov => {
                 let value = self.get_value(operands[1])?;
+                eprintln!("[mov] {:?} <- {:?} (value={:?})", operands[0], operands[1], value);
                 match operands[0] {
                     Operand::Register(reg) => {
                         self.state.set_register(reg, value)?;
@@ -211,6 +216,7 @@ impl VM {
             Opcode::Addx => {
                 let lhs = self.get_value(operands[1])?;
                 let rhs = self.get_value(operands[2])?;
+                eprintln!("[add] {:?} = {:?} + {:?} (lhs={:?}, rhs={:?})", operands[0], operands[1], operands[2], lhs, rhs);
                 let value = lhs.value().add(&rhs.value())?;
                 self.set_value(operands[0], value)?;
             }
@@ -525,6 +531,33 @@ impl VM {
                 self.state.set_register(Register::Rv, ret)?;
             }
 
+            // Exception handling (SEH)
+            Opcode::Try => {
+                let handler_offset = operands[0].as_immd();
+                let handler_pc = (self.state.pc as isize + handler_offset) as usize;
+                let seh_record = SehRecord {
+                    handler_pc,
+                    saved_rsp: self.state.rsp,
+                    saved_ctrl_rsp: self.state.ctrl_rsp,
+                    saved_rbp: self.state.rbp,
+                };
+                self.state.seh_stack.push(seh_record);
+            }
+            Opcode::EndTry => {
+                self.state.seh_stack.pop();
+            }
+            Opcode::ThrowExc => {
+                let exc_val = self.get_value(operands[0])?;
+                return self.handle_throw(exc_val);
+            }
+            Opcode::LoadException => {
+                // Registers are preserved at throw-point state by handle_throw.
+                // Just get the exception value from Rv.
+                let exc_val = self.state.get_register(Register::Rv)?;
+                eprintln!("[load_exc] rv={:?} -> {:?}", exc_val, operands[0]);
+                self.set_value(operands[0], exc_val)?;
+            }
+
             // Native method call
             Opcode::CallNative => {
                 let func = self.get_value(operands[0])?;
@@ -554,6 +587,41 @@ impl VM {
         self.state.jump_offset(1);
 
         Ok(())
+    }
+
+    fn handle_throw(&mut self, exc_val: ValueRef) -> Result<(), RuntimeError> {
+        match self.state.seh_stack.pop() {
+            Some(record) => {
+                eprintln!(
+                    "[throw] saved regs: r0={:?}, r1={:?}, r2={:?}, r3={:?}, r4={:?}, r5={:?}, r6={:?}, r7={:?}",
+                    self.state.get_register(Register::R0).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R1).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R2).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R3).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R4).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R5).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R6).unwrap_or(ValueRef::null()),
+                    self.state.get_register(Register::R7).unwrap_or(ValueRef::null()),
+                );
+                eprintln!("[throw] rv={:?}", self.state.get_register(Register::Rv).unwrap_or(ValueRef::null()));
+
+                // Restore rsp/ctrl_rsp/rbp to try entry point
+                // Registers keep their current (throw-point) values
+                self.state.rsp = record.saved_rsp;
+                self.state.ctrl_rsp = record.saved_ctrl_rsp;
+                self.state.rbp = record.saved_rbp;
+
+                eprintln!("[throw] restored rsp={}, rbp={}, handler_pc={}", self.state.rsp, self.state.rbp, record.handler_pc);
+
+                self.state.set_register(Register::Rv, exc_val)?;
+                self.state.jump(record.handler_pc);
+                Ok(())
+            }
+            None => {
+                let exc_display = format!("{:?}", exc_val);
+                Err(RuntimeError::UnhandledException { value: exc_display })
+            }
+        }
     }
 
     fn get_value(&self, operand: Operand) -> Result<ValueRef, RuntimeError> {
@@ -599,10 +667,19 @@ pub struct State {
     pub data_stack: [ValueRef; STACK_MAX],
     pub ctrl_stack: [usize; STACK_MAX],
     pub registers: [ValueRef; 20],
+    pub seh_stack: Vec<SehRecord>,
     pub rsp: usize,
     pub rbp: usize,
     pub ctrl_rsp: usize,
     pub pc: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SehRecord {
+    pub handler_pc: usize,
+    pub saved_rsp: usize,
+    pub saved_ctrl_rsp: usize,
+    pub saved_rbp: usize,
 }
 
 impl Default for State {
@@ -617,6 +694,7 @@ impl State {
             data_stack: std::array::from_fn(|_| ValueRef::null()),
             ctrl_stack: [0; STACK_MAX],
             registers: std::array::from_fn(|_| ValueRef::null()),
+            seh_stack: Vec::new(),
             rsp: 0,
             rbp: 0,
             ctrl_rsp: 0,

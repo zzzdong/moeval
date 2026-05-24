@@ -403,7 +403,26 @@ impl<'a> TypeChecker<'a> {
             Statement::Break => Ok(()),
             Statement::Continue => Ok(()),
             Statement::Item(item_stmt) => self.check_item_statement(item_stmt),
+            Statement::Try(try_stmt) => self.check_try_statement(try_stmt),
+            Statement::Throw(throw_stmt) => self.check_throw_statement(throw_stmt),
         }
+    }
+
+    fn check_try_statement(&mut self, try_stmt: &TryStatement) -> Result<(), TypeError> {
+        self.check_block_statement(&try_stmt.try_block)?;
+        self.symbols.enter_scope();
+        if let Pattern::Identifier(ident) = &try_stmt.catch_pattern {
+            self.symbols.insert(ident.name(), Type::Any);
+        }
+        for stmt in &try_stmt.catch_block.0 {
+            self.check_statement(stmt)?;
+        }
+        self.symbols.leave_scope();
+        Ok(())
+    }
+
+    fn check_throw_statement(&mut self, throw_stmt: &ThrowStatement) -> Result<(), TypeError> {
+        self.check_expression(&throw_stmt.value).map(|_| ())
     }
 
     // 新增方法：检查块语句

@@ -317,6 +317,19 @@ pub enum Instruction {
         end: Option<Value>,
         result: Value,
     },
+
+    // Exception Handling Instructions
+    PushSeh {
+        handler: BlockId,
+    },
+    PopSeh,
+    Throw {
+        value: Value,
+        args: Vec<Value>,
+    },
+    LoadException {
+        dst: Value,
+    },
 }
 
 impl Instruction {
@@ -327,6 +340,7 @@ impl Instruction {
                 | Instruction::Return { .. }
                 | Instruction::Jump { .. }
                 | Instruction::BrIf { .. }
+                | Instruction::Throw { .. }
         )
     }
 
@@ -458,6 +472,14 @@ impl Instruction {
                 value,
             } => (vec![], vec![*object, *field, *value]),
             Instruction::Halt => (vec![], vec![]),
+            Instruction::PushSeh { .. } => (vec![], vec![]),
+            Instruction::PopSeh => (vec![], vec![]),
+            Instruction::Throw { value, args } => {
+                let mut used = vec![*value];
+                used.extend(args.iter().cloned());
+                (vec![], used)
+            }
+            Instruction::LoadException { dst } => (vec![*dst], vec![]),
         }
     }
 }
@@ -659,6 +681,27 @@ impl std::fmt::Display for Instruction {
                 write!(f, "{object}.{field} = {value}")
             }
             Instruction::Halt => write!(f, "halt"),
+            Instruction::PushSeh { handler } => {
+                write!(f, "push_seh {handler}")
+            }
+            Instruction::PopSeh => write!(f, "pop_seh"),
+            Instruction::Throw { value, args } => {
+                write!(f, "throw {value}")?;
+                if !args.is_empty() {
+                    write!(f, "(")?;
+                    for (i, arg) in args.iter().enumerate() {
+                        write!(f, "{arg}")?;
+                        if i != args.len() - 1 {
+                            write!(f, ", ")?;
+                        }
+                    }
+                    write!(f, ")")?;
+                }
+                Ok(())
+            }
+            Instruction::LoadException { dst } => {
+                write!(f, "{dst} = load_exception")
+            }
         }
     }
 }

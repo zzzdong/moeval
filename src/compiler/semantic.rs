@@ -96,7 +96,26 @@ impl<'a> SemanticAnalyzer<'a> {
             Statement::Item(ItemStatement::Enum(EnumItem { .. })) => {
                 unimplemented!("EnumItem not implemented")
             }
+            Statement::Try(try_stmt) => self.analyze_try_statement(try_stmt),
+            Statement::Throw(throw_stmt) => self.analyze_throw_statement(throw_stmt),
         }
+    }
+
+    fn analyze_try_statement(&mut self, try_stmt: &TryStatement) -> Result<(), SemanticError> {
+        self.analyze_block(&try_stmt.try_block)?;
+        self.symbol_table.enter_scope();
+        if let Pattern::Identifier(ident) = &try_stmt.catch_pattern {
+            self.symbol_table.insert(ident.name(), ());
+        }
+        for stmt in &try_stmt.catch_block.0 {
+            self.analyze_statement(stmt)?;
+        }
+        self.symbol_table.leave_scope();
+        Ok(())
+    }
+
+    fn analyze_throw_statement(&mut self, throw_stmt: &ThrowStatement) -> Result<(), SemanticError> {
+        self.analyze_expression(&throw_stmt.value).map(|_| ())
     }
 
     fn analyze_let_statement(&mut self, let_stmt: &LetStatement) -> Result<(), SemanticError> {

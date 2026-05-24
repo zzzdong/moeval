@@ -68,6 +68,10 @@ impl Block {
         self.seal = true;
     }
 
+    pub fn is_sealed(&self) -> bool {
+        self.seal
+    }
+
     pub fn set_block_params(&mut self, params: Vec<Variable>) {
         self.params = params;
     }
@@ -174,6 +178,12 @@ impl ControlFlowGraph {
 
     pub fn emit(&mut self, inst: Instruction) {
         let curr = self.current_block.expect("no current block");
+
+        // 已封存的块不接受任何新指令和边（终止指令后的死代码）
+        if self.blocks[curr.as_usize()].is_sealed() {
+            return;
+        }
+
         match &inst {
             Instruction::Jump { dst, .. } => {
                 let dst = dst.to_block();
@@ -238,6 +248,15 @@ impl ControlFlowGraph {
 
     pub fn get_successors(&self, block_id: BlockId) -> &Vec<BlockId> {
         &self.successors[&block_id]
+    }
+
+    pub fn add_edge(&mut self, from: BlockId, to: BlockId) {
+        self.successors.entry(from).or_default().push(to);
+        self.precedences.entry(to).or_default().push(from);
+
+        let from_node = self.block_node_map[&from];
+        let to_node = self.block_node_map[&to];
+        self.graph.add_edge(from_node, to_node, ());
     }
 
     pub(crate) fn dominators(&self) -> Dominators<NodeIndex> {

@@ -189,16 +189,17 @@ impl Compiler {
 
         // println!("before SSA:\n{}", unit.control_flow_graph);
 
-        // TODO: 暂时禁用SSA转换，待修复后再启用
+        // SSA转换
         let mut ssa_builder = ir::SSABuilder::new(&mut unit.control_flow_graph);
         ssa_builder.convert_to_ssa();
+        let throw_to_handlers = ssa_builder.into_throw_to_handlers();
 
         // println!("after SSA:\n{}", unit.control_flow_graph);
 
         // panic!("debug");
 
         // code generation, IR -> bytecode
-        let mut codegen = Codegen::new(&Register::general());
+        let mut codegen = Codegen::new(&Register::general(), throw_to_handlers);
         let insts = codegen.generate_code(unit.control_flow_graph);
 
         let mut instructions = insts.to_vec();
@@ -210,8 +211,9 @@ impl Compiler {
         for mut func in unit.functions.into_iter() {
             let mut ssa_builder = ir::SSABuilder::new(&mut func.control_flow_graph);
             ssa_builder.convert_to_ssa();
+            let func_throw_to_handlers = ssa_builder.into_throw_to_handlers();
 
-            let mut codegen = Codegen::new(&Register::general());
+            let mut codegen = Codegen::new(&Register::general(), func_throw_to_handlers);
             let insts = codegen.generate_code(func.control_flow_graph);
             symtab.insert(func.id, offset);
             offset += insts.len();

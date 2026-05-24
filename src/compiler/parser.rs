@@ -181,6 +181,14 @@ fn parse_statement(pair: Pair<Rule>) -> Result<StatementNode> {
         }
         Rule::break_statement => Statement::Break,
         Rule::continue_statement => Statement::Continue,
+        Rule::try_statement => {
+            let stat = parse_try_statement(pair)?;
+            Statement::Try(stat)
+        }
+        Rule::throw_statement => {
+            let stat = parse_throw_statement(pair)?;
+            Statement::Throw(stat)
+        }
         _ => unreachable!("unknown statement: {pair:?}"),
     };
 
@@ -364,6 +372,28 @@ fn parse_return_statement(pair: Pair<Rule>) -> Result<ReturnStatement> {
         .transpose()?;
 
     Ok(ReturnStatement { value })
+}
+
+fn parse_try_statement(pair: Pair<Rule>) -> Result<TryStatement> {
+    let mut pairs = pair.into_inner();
+
+    let try_block = parse_block(pairs.next().unwrap())?;
+    let catch_pattern = parse_pattern(pairs.next().unwrap())?;
+    let catch_block = parse_block(pairs.next().unwrap())?;
+
+    Ok(TryStatement {
+        try_block,
+        catch_pattern,
+        catch_block,
+    })
+}
+
+fn parse_throw_statement(pair: Pair<Rule>) -> Result<ThrowStatement> {
+    let mut pairs = pair.into_inner();
+
+    let value = parse_expression(pairs.next().unwrap())?;
+
+    Ok(ThrowStatement { value })
 }
 
 fn parse_pattern(pair: Pair<Rule>) -> Result<Pattern> {

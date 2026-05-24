@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use super::ast::syntax::*;
 use super::typing::{TypeContext, TypeDef};
 use crate::compiler::ir::{
-    BlockId, FuncParam, FuncSignature, FunctionBuilder, InstBuilder, IrBuilder, IrFunction, IrUnit,
+    BlockId, FuncParam, FuncSignature, FunctionBuilder, InstBuilder, IrFunction,
     Name, Value,
 };
 use crate::compiler::symbol::SymbolTable;
@@ -52,14 +52,7 @@ impl<'a> ASTLower<'a> {
         }
     }
 
-    pub fn lower_program(&mut self, prog: Program) -> IrUnit {
-        let mut unit = IrUnit::new();
-
-        let builder: &mut dyn InstBuilder = &mut IrBuilder::new(&mut unit);
-
-        let entry = builder.create_block("__entry".into());
-        builder.switch_to_block(entry);
-
+    pub fn lower_program(&mut self, prog: Program) {
         // declare functions
         for func in self.type_cx.functions() {
             self.declare_function(func);
@@ -85,10 +78,8 @@ impl<'a> ASTLower<'a> {
             }
         }
 
-        // FIXME: This is a hack to make block not empty.
+        // ensure the entry block has terminator
         self.builder.make_halt();
-
-        unit
     }
 
     fn lower_statement(&mut self, statement: StatementNode) {
@@ -126,6 +117,12 @@ impl<'a> ASTLower<'a> {
             }
             Statement::Block(block_stmt) => {
                 self.lower_block(block_stmt);
+            }
+            Statement::Try(try_stmt) => {
+                self.lower_try_stmt(try_stmt);
+            }
+            Statement::Throw(throw_stmt) => {
+                self.lower_throw_stmt(throw_stmt);
             }
             Statement::Empty => {} // _ => unimplemented!("{:?}", statement),
         }
@@ -318,6 +315,54 @@ impl<'a> ASTLower<'a> {
         self.symbols.leave_scope();
     }
 
+    fn lower_try_stmt(&mut self, try_stmt: TryStatement) {
+        let TryStatement {
+            try_block,
+            catch_pattern,
+            catch_block,
+        } = try_stmt;
+
+        let try_body = self.create_block("try_body");
+        let catch_blk = self.create_block("catch");
+        let after_catch = self.create_block("after_catch");
+
+        // Register SEH handler and jump to try body
+        self.builder.push_seh(catch_blk);
+        self.builder.add_exception_edge(try_body, catch_blk);
+        self.builder.jump(try_body);
+
+        // Try body
+        self.builder.switch_to_block(try_body);
+        self.symbols.enter_scope();
+        self.lower_block(try_block);
+        self.symbols.leave_scope();
+        // lower_block 可能改变了当前块（如嵌套 try 后切换到 after_catch），
+        // 需要切回 try_body 确保 pop_seh 和 jump 进入正确的块
+        self.builder.switch_to_block(try_body);
+        self.builder.pop_seh();
+        self.builder.jump(after_catch);
+
+        // Catch handler
+        self.builder.switch_to_block(catch_blk);
+        let exc_val = self.builder.load_exception();
+        self.symbols.enter_scope();
+        self.lower_pattern(catch_pattern, exc_val);
+        self.lower_block(catch_block);
+        self.symbols.leave_scope();
+        self.builder.jump(after_catch);
+
+        // Merge point
+        self.builder.switch_to_block(after_catch);
+    }
+
+    fn lower_throw_stmt(&mut self, throw_stmt: ThrowStatement) {
+        let ThrowStatement { value } = throw_stmt;
+        let exc_val = self.lower_expression(value);
+        self.builder.throw_value(exc_val);
+        // Throw 是终止指令，封存当前块使后续死代码的 emit 被静默丢弃
+        self.builder.seal_block(self.builder.current_block());
+    }
+
     fn lower_function_item(&mut self, fn_item: FunctionItem) -> Value {
         let FunctionItem {
             name, params, body, ..
@@ -369,6 +414,7 @@ impl<'a> ASTLower<'a> {
 
         // append return instruction
         func_lower.builder.return_(None);
+        func_lower.builder.seal_block(func_lower.builder.current_block());
 
         self.builder.module_mut().define_function(func_id, func);
 

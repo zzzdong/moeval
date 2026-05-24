@@ -31,16 +31,28 @@ impl VariableInfo {
 pub struct SSABuilder<'a> {
     cfg: &'a mut ControlFlowGraph,
     dominators: Dominators<NodeIndex>,
+    /// 记录每个throw块对应的异常handler块列表
+    throw_to_handlers: HashMap<BlockId, Vec<BlockId>>,
 }
 
 impl<'a> SSABuilder<'a> {
     pub fn new(cfg: &'a mut ControlFlowGraph) -> Self {
         let dominators = cfg.dominators();
-        Self { cfg, dominators }
+        Self {
+            cfg,
+            dominators,
+            throw_to_handlers: HashMap::new(),
+        }
     }
 
     /// 完整的SSA转换流程
     pub fn convert_to_ssa(&mut self) {
+        // 0. 预处理：为所有Throw指令添加异常边到对应的SEH handler
+        self.add_exception_edges_for_throws();
+
+        // 重新计算支配关系（添加异常边后，支配关系可能改变）
+        self.dominators = self.cfg.dominators();
+
         // 1. 收集变量的定义和使用信息
         let var_info = self.collect_var_def_and_use();
 
@@ -58,6 +70,48 @@ impl<'a> SSABuilder<'a> {
 
         // 6. 处理跳转参数（在重命名之后，使用重命名后的变量）
         self.handle_jump_args(&phi_placements, &block_var_versions);
+    }
+
+    /// 预处理：扫描所有块，为每个Throw指令添加从throw块到对应SEH handler的异常边
+    fn add_exception_edges_for_throws(&mut self) {
+        // SEH scope栈：存储当前活跃的handler块ID
+        let mut seh_scope: Vec<BlockId> = Vec::new();
+        // 记录每个throw块对应的handler
+        let mut throw_edges: Vec<(BlockId, BlockId)> = Vec::new();
+
+        for block in self.cfg.blocks() {
+            for inst in block.instructions() {
+                match inst {
+                    Instruction::PushSeh { handler } => {
+                        seh_scope.push(*handler);
+                    }
+                    Instruction::PopSeh => {
+                        seh_scope.pop();
+                    }
+                    Instruction::Throw { .. } => {
+                        // 为SEH作用域中所有handler添加异常边（从内到外）
+                        for &handler in &seh_scope {
+                            throw_edges.push((block.id(), handler));
+                        }
+                        // Throw是终结指令，之后指令是死代码，停止SEH跟踪
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // 添加异常边（如果尚未添加），同时记录throw→handler映射
+        for (throw_block, handler) in throw_edges {
+            let successors = self.cfg.get_successors(throw_block);
+            if !successors.contains(&handler) {
+                self.cfg.add_edge(throw_block, handler);
+            }
+            self.throw_to_handlers
+                .entry(throw_block)
+                .or_default()
+                .push(handler);
+        }
     }
 
     /// 收集所有变量的定义和使用点
@@ -208,6 +262,15 @@ impl<'a> SSABuilder<'a> {
         target_block_id: BlockId,
         arg_values: &[Variable],
     ) {
+        // 预先获取后继信息，避免与后续可变借用冲突
+        let successors: Vec<BlockId> = self.cfg.get_successors(pred_block_id).clone();
+        // 检查pred_block_id是否是throw块且target_block_id是否是它的异常handler
+        let is_exception_handler = self
+            .throw_to_handlers
+            .get(&pred_block_id)
+            .map(|handlers| handlers.contains(&target_block_id))
+            .unwrap_or(false);
+
         if let Some(pred_block) = self.cfg.get_block_mut(pred_block_id) {
             for inst in pred_block.instructions_mut().iter_mut() {
                 match inst {
@@ -227,6 +290,12 @@ impl<'a> SSABuilder<'a> {
                             true_args.extend(arg_values.iter().map(|&arg| Value::Variable(arg)));
                         } else {
                             false_args.extend(arg_values.iter().map(|&arg| Value::Variable(arg)));
+                        }
+                    }
+                    Instruction::Throw { args, .. } => {
+                        // 只当target_block_id是此throw块的异常handler时才添加phi参数
+                        if is_exception_handler {
+                            args.extend(arg_values.iter().map(|&arg| Value::Variable(arg)));
                         }
                     }
                     _ => {}
@@ -585,6 +654,17 @@ impl<'a> SSABuilder<'a> {
                 SSABuilder::rename_use(value, stacks);
             }
             Instruction::Halt => {}
+            Instruction::PushSeh { .. } => {}
+            Instruction::PopSeh => {}
+            Instruction::Throw { value, args } => {
+                SSABuilder::rename_use(value, stacks);
+                for arg in args.iter_mut() {
+                    SSABuilder::rename_use(arg, stacks);
+                }
+            }
+            Instruction::LoadException { dst } => {
+                SSABuilder::rename_definition(dst, new_versions);
+            }
         }
     }
 
@@ -606,5 +686,10 @@ impl<'a> SSABuilder<'a> {
             *var = Value::Variable(*current_version);
         }
         // 如果栈为空，说明变量未定义，保持原样（可能会在后端报错）
+    }
+
+    /// 提取throw_to_handlers映射并消费SSABuilder
+    pub fn into_throw_to_handlers(self) -> HashMap<BlockId, Vec<BlockId>> {
+        self.throw_to_handlers
     }
 }
