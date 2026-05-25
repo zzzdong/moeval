@@ -322,13 +322,16 @@ impl LiveIntervalAnalyzer {
     ) -> HashSet<Variable> {
         let mut live_out = HashSet::new();
 
-        // 获取所有后继块
-        let successors = cfg.get_successors(block.id());
-
-        // 遍历所有后继块
-        for &succ_block_id in successors {
-            // 将后继块的live_in中的所有变量添加到当前块的live_out中
+        // Normal successors (Jump, BrIf)
+        for &succ_block_id in cfg.get_successors(block.id()) {
             if let Some(succ_live_in) = live_in_sets.get(&succ_block_id) {
+                live_out.extend(succ_live_in.iter().cloned());
+            }
+        }
+
+        // Exception edge successors (Throw → handler)
+        for edge in &block.exception_edges {
+            if let Some(succ_live_in) = live_in_sets.get(&edge.handler) {
                 live_out.extend(succ_live_in.iter().cloned());
             }
         }
