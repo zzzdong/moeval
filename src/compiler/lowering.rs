@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use super::ast::syntax::*;
 use super::typing::{TypeContext, TypeDef};
 use crate::compiler::ir::{
-    BlockId, FuncParam, FuncSignature, FunctionBuilder, InstBuilder, IrBuilder, IrFunction, IrUnit,
-    Name, Value,
+    BlockId, ExceptionEdge, FuncParam, FuncSignature, FunctionBuilder, InstBuilder, IrBuilder,
+    IrFunction, IrUnit, Name, Value,
 };
 use crate::compiler::symbol::SymbolTable;
 use crate::compiler::typing::{FunctionDef, StructDef};
@@ -28,11 +28,26 @@ impl LoopContext {
     }
 }
 
+pub(crate) struct TryContext {
+    pub(crate) edges: Vec<ExceptionEdge>,
+    pub(crate) try_blocks: Vec<BlockId>,
+}
+
+impl TryContext {
+    pub(crate) fn new() -> Self {
+        Self {
+            edges: Vec::new(),
+            try_blocks: Vec::new(),
+        }
+    }
+}
+
 pub struct ASTLower<'a> {
     builder: &'a mut dyn InstBuilder,
     env: &'a Environment,
     symbols: SymbolTable<Variable>,
     loop_contexts: Vec<LoopContext>,
+    try_contexts: Vec<TryContext>,
     type_cx: &'a TypeContext,
 }
 
@@ -48,6 +63,7 @@ impl<'a> ASTLower<'a> {
             env,
             symbols,
             loop_contexts: Vec::new(),
+            try_contexts: Vec::new(),
             type_cx,
         }
     }
@@ -126,6 +142,12 @@ impl<'a> ASTLower<'a> {
             }
             Statement::Block(block_stmt) => {
                 self.lower_block(block_stmt);
+            }
+            Statement::Try(try_stmt) => {
+                self.lower_try_stmt(try_stmt);
+            }
+            Statement::Throw(throw_stmt) => {
+                self.lower_throw_stmt(throw_stmt);
             }
             Statement::Empty => {} // _ => unimplemented!("{:?}", statement),
         }
@@ -305,6 +327,119 @@ impl<'a> ASTLower<'a> {
 
     fn lower_continue_stmt(&mut self) {
         self.builder.jump(self.loop_context().continue_point);
+        self.builder.seal_block(self.builder.current_block());
+    }
+
+    fn enter_try_context(&mut self) {
+        let mut ctx = TryContext::new();
+        ctx.try_blocks = self
+            .builder
+            .control_flow_graph()
+            .blocks()
+            .iter()
+            .map(|b| b.id())
+            .collect();
+        self.try_contexts.push(ctx);
+    }
+
+    fn leave_try_context(&mut self) -> Vec<ExceptionEdge> {
+        self.try_contexts.pop().unwrap().edges
+    }
+
+    fn add_exception_edge_to_current_try(&mut self, edge: ExceptionEdge) {
+        if let Some(ctx) = self.try_contexts.last_mut() {
+            ctx.edges.push(edge);
+        }
+    }
+
+    fn propagate_try_edges(&mut self, try_body: BlockId) {
+        let edges: Vec<ExceptionEdge>;
+        let existing_blocks: Vec<BlockId>;
+        {
+            let ctx = match self.try_contexts.last() {
+                Some(ctx) => ctx,
+                None => return,
+            };
+            if ctx.edges.is_empty() {
+                return;
+            }
+            edges = ctx.edges.clone();
+            existing_blocks = ctx.try_blocks.clone();
+        }
+
+        let all_blocks: Vec<BlockId> = self
+            .builder
+            .control_flow_graph()
+            .blocks()
+            .iter()
+            .map(|b| b.id())
+            .collect();
+
+        let mut targets = vec![try_body];
+        for &block_id in &all_blocks {
+            if !existing_blocks.contains(&block_id) {
+                targets.push(block_id);
+            }
+        }
+
+        for child in targets {
+            for edge in &edges {
+                self.builder.add_exception_edge(child, edge.clone());
+            }
+        }
+    }
+
+    fn lower_try_stmt(&mut self, try_stmt: TryStatement) {
+        let TryStatement { body, handlers } = try_stmt;
+
+        let curr_block = self.builder.current_block();
+        let try_body = self.create_block("try_body");
+        let merge_blk = self.create_block("try_merge");
+
+        // Jump from current block to try_body
+        self.builder.switch_to_block(curr_block);
+        self.builder.jump(try_body);
+
+        let handler_blks: Vec<BlockId> = handlers
+            .iter()
+            .map(|_| self.create_block("catch_handler"))
+            .collect();
+
+        // lower handlers first (they are after try in codegen order)
+        for (handler, handler_blk) in handlers.iter().zip(handler_blks.iter()) {
+            self.builder.switch_to_block(*handler_blk);
+            self.lower_block(handler.body.clone());
+            self.builder.jump(merge_blk);
+        }
+
+        // lower try body
+        self.enter_try_context();
+
+        for handler_blk in &handler_blks {
+            self.add_exception_edge_to_current_try(ExceptionEdge {
+                catch_all: true,
+                handler: *handler_blk,
+                try_end_block: merge_blk,
+            });
+        }
+
+        self.builder.switch_to_block(try_body);
+        self.lower_block(body);
+        self.builder.jump(merge_blk);
+
+        self.propagate_try_edges(try_body);
+        self.leave_try_context();
+
+        self.builder.switch_to_block(merge_blk);
+    }
+
+    fn lower_throw_stmt(&mut self, throw_stmt: ThrowStatement) {
+        let ThrowStatement { value } = throw_stmt;
+        let payload = self.lower_expression(value);
+        let tag = self.builder.make_constant(crate::bytecode::Constant::String(
+            std::sync::Arc::new("throw".to_string()),
+        ));
+        self.builder.throw(tag, Some(payload));
         self.builder.seal_block(self.builder.current_block());
     }
 

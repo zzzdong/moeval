@@ -69,6 +69,7 @@ pub enum RuntimeError {
         object: String,
         property: String,
     },
+    UnhandledException,
 }
 
 impl RuntimeError {
@@ -208,6 +209,7 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::MissingPropertySetter { object, property } => {
                 write!(f, "Missing property setter: {property} for {object}")
             }
+            RuntimeError::UnhandledException => write!(f, "Unhandled exception"),
         }
     }
 }

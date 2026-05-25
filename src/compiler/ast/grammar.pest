@@ -13,6 +13,8 @@ statement = {
   | loop_statement
   | while_statement
   | for_statement
+  | try_statement
+  | throw_statement
   | return_statement
   | continue_statement
   | break_statement
@@ -80,6 +82,15 @@ while_statement = { "while" ~ expression ~ block }
 
 /// For Statment
 for_statement = { "for" ~ pattern ~ "in" ~ expression ~ block }
+
+/// Try Statement
+try_statement = { "try" ~ block ~ catch_clause+ }
+
+/// Catch Clause
+catch_clause = { "catch" ~ pattern ~ block }
+
+/// Throw Statement
+throw_statement = { "throw" ~ expression ~ ";" }
 
 /// Return Statment
 return_statement = { "return" ~ expression? ~ ";" }

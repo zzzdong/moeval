@@ -42,12 +42,6 @@ impl LiveInterval {
 
     #[track_caller]
     pub fn active(&mut self, index: usize) {
-        println!(
-            "---> active {:?}: {index}, from {}",
-            self.var,
-            std::panic::Location::caller()
-        );
-
         self.start = self.start.min(index);
         self.end = self.end.max(index);
 

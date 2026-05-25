@@ -13,6 +13,8 @@ pub struct Module {
     pub symtab: HashMap<FunctionId, usize>,
     pub instructions: Vec<Bytecode>,
     pub debug_instructions: BTreeMap<usize, crate::compiler::Instruction>,
+    pub exception_tables: HashMap<FunctionId, Vec<ExceptionTableEntry>>,
+    pub function_ranges: Vec<FunctionRange>,
 }
 
 impl Module {
@@ -28,6 +30,8 @@ impl Module {
             symtab,
             instructions,
             debug_instructions: BTreeMap::new(),
+            exception_tables: HashMap::new(),
+            function_ranges: Vec::new(),
         }
     }
 }
@@ -220,7 +224,10 @@ pub enum Opcode {
     PropSet,
     /// call_method dst, obj, method
     CallMethod,
-    
+    /// throw tag_const, payload_reg, 0
+    Throw,
+    /// throw_ref
+    ThrowRef,
 }
 
 impl fmt::Display for Opcode {
@@ -277,6 +284,8 @@ impl fmt::Display for Opcode {
             Opcode::PropGet => write!(f, "prop_get"),
             Opcode::PropSet => write!(f, "prop_set"),
             Opcode::CallMethod => write!(f, "call_method"),
+            Opcode::Throw => write!(f, "throw"),
+            Opcode::ThrowRef => write!(f, "throw_ref"),
         }
     }
 }
@@ -555,4 +564,21 @@ impl fmt::Display for FunctionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+/// 异常表条目（指令索引单位）
+#[derive(Debug, Clone)]
+pub struct ExceptionTableEntry {
+    pub try_start: usize,
+    pub try_end: usize,
+    pub handler: usize,
+    pub catch_all: bool,
+}
+
+/// 函数边界信息
+#[derive(Debug, Clone)]
+pub struct FunctionRange {
+    pub func_id: FunctionId,
+    pub start: usize,
+    pub end: usize,
 }

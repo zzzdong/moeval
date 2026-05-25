@@ -36,7 +36,7 @@ impl VM {
             debug!("{}", self.state);
             debug!("{inst:?}");
 
-            let Bytecode { opcode, operands: _operands } = inst;
+            let Bytecode { opcode, operands } = inst;
 
             match opcode {
                 Opcode::Halt => {
@@ -49,9 +49,20 @@ impl VM {
                         let ret = self.get_value(Operand::Register(Register::Rv))?;
                         return Ok(Some(ret));
                     }
+                    let _ = self.state.pop_frame();
                     let pc = self.state.popc()?;
-
                     self.state.jump(pc);
+                }
+
+                Opcode::Throw => {
+                    let exception = self.get_value(operands[1])?
+                        .take();
+                    self.vm_throw(ValueRef::from(exception))?;
+                }
+
+                Opcode::ThrowRef => {
+                    let exception = self.get_value(operands[1])?;
+                    self.vm_throw(exception)?;
                 }
 
                 _ => {
@@ -70,9 +81,14 @@ impl VM {
             // Control Flow Instructions
             Opcode::Call => {
                 let func = operands[0].as_immd();
-                match self.program.symtab.get(&FunctionId::new(func as u32)) {
+                let func_id = FunctionId::new(func as u32);
+                match self.program.symtab.get(&func_id) {
                     Some(location) => {
                         self.state.pushc(self.state.pc() + 1)?;
+                        self.state.push_frame(CallFrame {
+                            return_pc: self.state.pc() + 1,
+                            func_id,
+                        })?;
                         self.state.jump(*location);
                         return Ok(());
                     }
@@ -84,24 +100,35 @@ impl VM {
                 }
             }
             Opcode::CallEx => match operands[0] {
-                Operand::Symbol(sym) => match self.program.symtab.get(&FunctionId::new(sym)) {
-                    Some(location) => {
-                        self.state.pushc(self.state.pc() + 1)?;
-                        self.state.jump(*location);
-                        return Ok(());
+                Operand::Symbol(sym) => {
+                    let func_id = FunctionId::new(sym);
+                    match self.program.symtab.get(&func_id) {
+                        Some(location) => {
+                            self.state.pushc(self.state.pc() + 1)?;
+                            self.state.push_frame(CallFrame {
+                                return_pc: self.state.pc() + 1,
+                                func_id,
+                            })?;
+                            self.state.jump(*location);
+                            return Ok(());
+                        }
+                        None => {
+                            return Err(RuntimeError::SymbolNotFound {
+                                name: format!("{sym}"),
+                            });
+                        }
                     }
-                    None => {
-                        return Err(RuntimeError::SymbolNotFound {
-                            name: format!("{sym}"),
-                        });
-                    }
-                },
+                }
                 Operand::Register(_) | Operand::Stack(_) => {
                     let value = self.get_value(operands[0])?;
                     match value.value().downcast_ref::<UserFunction>() {
                         Some(func) => match self.program.symtab.get(&func.id()) {
                             Some(location) => {
                                 self.state.pushc(self.state.pc() + 1)?;
+                                self.state.push_frame(CallFrame {
+                                    return_pc: self.state.pc() + 1,
+                                    func_id: func.id(),
+                                })?;
                                 self.state.jump(*location);
                                 return Ok(());
                             }
@@ -590,6 +617,55 @@ impl VM {
             Constant::String(name) => Ok(name.clone()),
         }
     }
+
+    fn find_handler(&self, func_id: FunctionId, pc: usize) -> Option<usize> {
+        let table = self.program.exception_tables.get(&func_id)?;
+        if table.is_empty() {
+            return None;
+        }
+        let idx = match table.binary_search_by(|e| e.try_start.cmp(&pc)) {
+            Ok(i) => i,
+            Err(0) => return None,
+            Err(i) => i - 1,
+        };
+        let mut best = None;
+        for i in (0..=idx).rev() {
+            let entry = &table[i];
+            if pc >= entry.try_start && pc < entry.try_end && entry.catch_all {
+                match best {
+                    None => best = Some(entry),
+                    Some(b) => {
+                        if entry.try_end < b.try_end {
+                            best = Some(entry);
+                        }
+                    }
+                }
+            }
+        }
+        let result = best.map(|e| e.handler);
+        result
+    }
+
+    fn vm_throw(&mut self, exception: ValueRef) -> Result<(), RuntimeError> {
+        loop {
+            let current_func = self.state.current_func_id();
+            let pc = self.state.pc;
+
+            if let Some(handler_pc) = self.find_handler(current_func, pc) {
+                self.state.jump(handler_pc);
+                self.state.set_register(Register::Rv, exception)?;
+                return Ok(());
+            }
+
+            if self.state.call_rsp == 0 {
+                return Err(RuntimeError::UnhandledException);
+            }
+
+            let frame = self.state.pop_frame()?;
+            let _ = self.state.popc()?;
+            self.state.jump(frame.return_pc);
+        }
+    }
 }
 
 /// State
@@ -598,11 +674,19 @@ impl VM {
 pub struct State {
     pub data_stack: [ValueRef; STACK_MAX],
     pub ctrl_stack: [usize; STACK_MAX],
+    pub call_frames: [CallFrame; STACK_MAX],
     pub registers: [ValueRef; 20],
     pub rsp: usize,
     pub rbp: usize,
     pub ctrl_rsp: usize,
+    pub call_rsp: usize,
     pub pc: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CallFrame {
+    pub return_pc: usize,
+    pub func_id: FunctionId,
 }
 
 impl Default for State {
@@ -616,10 +700,15 @@ impl State {
         Self {
             data_stack: std::array::from_fn(|_| ValueRef::null()),
             ctrl_stack: [0; STACK_MAX],
+            call_frames: [CallFrame {
+                return_pc: 0,
+                func_id: FunctionId::new(0),
+            }; STACK_MAX],
             registers: std::array::from_fn(|_| ValueRef::null()),
             rsp: 0,
             rbp: 0,
             ctrl_rsp: 0,
+            call_rsp: 0,
             pc: 0,
         }
     }
@@ -700,6 +789,31 @@ impl State {
         }
         self.ctrl_rsp -= 1;
         Ok(self.ctrl_stack[self.ctrl_rsp])
+    }
+
+    pub fn push_frame(&mut self, frame: CallFrame) -> Result<(), RuntimeError> {
+        if self.call_rsp >= STACK_MAX {
+            return Err(RuntimeError::StackOverflow);
+        }
+        self.call_frames[self.call_rsp] = frame;
+        self.call_rsp += 1;
+        Ok(())
+    }
+
+    pub fn pop_frame(&mut self) -> Result<CallFrame, RuntimeError> {
+        if self.call_rsp == 0 {
+            return Err(RuntimeError::StackOverflow);
+        }
+        self.call_rsp -= 1;
+        Ok(self.call_frames[self.call_rsp])
+    }
+
+    pub fn current_func_id(&self) -> FunctionId {
+        if self.call_rsp == 0 {
+            FunctionId::new(u32::MAX)
+        } else {
+            self.call_frames[self.call_rsp - 1].func_id
+        }
     }
 
     pub fn push(&mut self, value: ValueRef) -> Result<(), RuntimeError> {

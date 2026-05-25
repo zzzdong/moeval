@@ -175,6 +175,14 @@ fn parse_statement(pair: Pair<Rule>) -> Result<StatementNode> {
             let stat = parse_if_statement(pair)?;
             Statement::If(stat)
         }
+        Rule::try_statement => {
+            let stat = parse_try_statement(pair)?;
+            Statement::Try(stat)
+        }
+        Rule::throw_statement => {
+            let stat = parse_throw_statement(pair)?;
+            Statement::Throw(stat)
+        }
         Rule::return_statement => {
             let stat = parse_return_statement(pair)?;
             Statement::Return(stat)
@@ -364,6 +372,36 @@ fn parse_return_statement(pair: Pair<Rule>) -> Result<ReturnStatement> {
         .transpose()?;
 
     Ok(ReturnStatement { value })
+}
+
+fn parse_try_statement(pair: Pair<Rule>) -> Result<TryStatement> {
+    let mut pairs = pair.into_inner();
+
+    let body = parse_block(pairs.next().unwrap())?;
+
+    let mut handlers = Vec::new();
+    for pair in pairs {
+        handlers.push(parse_catch_clause(pair)?);
+    }
+
+    Ok(TryStatement { body, handlers })
+}
+
+fn parse_catch_clause(pair: Pair<Rule>) -> Result<CatchClause> {
+    let mut pairs = pair.into_inner();
+
+    let pattern = parse_pattern(pairs.next().unwrap())?;
+    let body = parse_block(pairs.next().unwrap())?;
+
+    Ok(CatchClause { pattern, body })
+}
+
+fn parse_throw_statement(pair: Pair<Rule>) -> Result<ThrowStatement> {
+    let mut pairs = pair.into_inner();
+
+    let value = parse_expression(pairs.next().unwrap())?;
+
+    Ok(ThrowStatement { value })
 }
 
 fn parse_pattern(pair: Pair<Rule>) -> Result<Pattern> {

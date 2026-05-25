@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use log::{debug, trace};
 
 use super::ir::{ControlFlowGraph, Instruction, Value};
-use crate::bytecode::{Bytecode, Opcode, Operand, Register};
+use crate::bytecode::{Bytecode, ExceptionTableEntry, Opcode, Operand, Register};
 
 use super::regalloc::{Action, RegAlloc};
 
@@ -28,7 +28,7 @@ impl Codegen {
         }
     }
 
-    pub fn generate_code(&mut self, cfg: ControlFlowGraph) -> &[Bytecode] {
+    pub fn generate_code(&mut self, cfg: ControlFlowGraph) -> (&[Bytecode], Vec<ExceptionTableEntry>) {
         // debug ir
         let block_layout = cfg.loop_root_reverse_postorder_layout2();
 
@@ -435,6 +435,21 @@ impl Codegen {
                     Instruction::Halt => {
                         self.codes.push(Bytecode::empty(Opcode::Halt));
                     }
+                    Instruction::Throw { tag, payload } => {
+                        let tag_op = self.gen_operand(tag);
+                        let payload_op = payload
+                            .map(|p| self.gen_operand(p))
+                            .unwrap_or(Operand::Immd(0));
+                        self.codes.push(Bytecode::triple(
+                            Opcode::Throw,
+                            tag_op,
+                            payload_op,
+                            Operand::Immd(0),
+                        ));
+                    }
+                    Instruction::ThrowRef => {
+                        self.codes.push(Bytecode::empty(Opcode::ThrowRef));
+                    }
                 }
 
                 self.inst_index += 1;
@@ -445,7 +460,25 @@ impl Codegen {
             patch(self);
         }
 
-        &self.codes
+        let mut exception_table = Vec::new();
+        for block in cfg.blocks() {
+            if block.exception_edges.is_empty() {
+                continue;
+            }
+            let try_start = self.block_map[&(block.id().as_usize() as isize)] as usize;
+            for edge in &block.exception_edges {
+                let handler_start = self.block_map[&(edge.handler.as_usize() as isize)] as usize;
+                let try_end = self.block_map[&(edge.try_end_block.as_usize() as isize)] as usize;
+                exception_table.push(ExceptionTableEntry {
+                    try_start,
+                    try_end,
+                    handler: handler_start,
+                    catch_all: edge.catch_all,
+                });
+            }
+        }
+
+        (&self.codes, exception_table)
     }
 
     fn gen_call(&mut self, func: Value, args: &[Value], result: Value) {

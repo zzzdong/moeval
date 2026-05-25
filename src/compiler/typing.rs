@@ -403,7 +403,22 @@ impl<'a> TypeChecker<'a> {
             Statement::Break => Ok(()),
             Statement::Continue => Ok(()),
             Statement::Item(item_stmt) => self.check_item_statement(item_stmt),
+            Statement::Try(try_stmt) => self.check_try_statement(try_stmt),
+            Statement::Throw(throw_stmt) => self.check_throw_statement(throw_stmt),
         }
+    }
+
+    fn check_try_statement(&mut self, try_stmt: &TryStatement) -> Result<(), TypeError> {
+        self.check_block_statement(&try_stmt.body)?;
+        for handler in &try_stmt.handlers {
+            self.check_block_statement(&handler.body)?;
+        }
+        Ok(())
+    }
+
+    fn check_throw_statement(&mut self, throw_stmt: &ThrowStatement) -> Result<(), TypeError> {
+        self.check_expression(&throw_stmt.value)?;
+        Ok(())
     }
 
     // 新增方法：检查块语句

@@ -19,12 +19,20 @@ pub(crate) struct NaturalLoop {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExceptionEdge {
+    pub catch_all: bool,
+    pub handler: BlockId,
+    pub try_end_block: BlockId,
+}
+
+#[derive(Debug, Clone)]
 pub struct Block {
     id: BlockId,
     label: Name,
     instructions: Vec<Instruction>,
     params: Vec<Variable>,
     seal: bool,
+    pub exception_edges: Vec<ExceptionEdge>,
 }
 
 impl Block {
@@ -35,6 +43,7 @@ impl Block {
             instructions: Vec::new(),
             params: Vec::new(),
             seal: false,
+            exception_edges: Vec::new(),
         }
     }
 
@@ -89,6 +98,20 @@ impl fmt::Display for Block {
                 }
             }
             write!(f, ")")?;
+        }
+        if !self.exception_edges.is_empty() {
+            write!(f, " [")?;
+            for (i, edge) in self.exception_edges.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                if edge.catch_all {
+                    write!(f, "catch_all (try_end: block{}) -> block{}", edge.try_end_block.as_usize(), edge.handler.as_usize())?;
+                } else {
+                    write!(f, "catch (try_end: block{}) -> block{}", edge.try_end_block.as_usize(), edge.handler.as_usize())?;
+                }
+            }
+            write!(f, "]")?;
         }
         writeln!(f)?;
         for (i, inst) in self.instructions.iter().enumerate() {
@@ -201,6 +224,12 @@ impl ControlFlowGraph {
                 let false_node = self.block_node_map[&false_blk];
                 self.graph.add_edge(curr_node, true_node, ());
                 self.graph.add_edge(curr_node, false_node, ());
+            }
+            Instruction::Throw { .. } | Instruction::ThrowRef => {
+                // Throw/ThrowRef have no normal successors.
+                // Exception edges are in the block's exception_edges field,
+                // but are NOT added to the CFG graph. Handler blocks will
+                // be visited separately during codegen.
             }
             _ => {}
         }
@@ -711,6 +740,10 @@ impl BlockLayout {
 
     pub fn get_block_pos(&self, block_id: BlockId) -> usize {
         *self.block_pos_map.get(&block_id).expect("block not found")
+    }
+
+    pub fn block_pos_map(&self) -> &BTreeMap<BlockId, usize> {
+        &self.block_pos_map
     }
 
     pub fn iter<'a>(&self, cfg: &'a ControlFlowGraph) -> impl Iterator<Item = &'a Block> {

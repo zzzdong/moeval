@@ -6,7 +6,7 @@ pub mod ssabuilder;
 use std::fmt;
 
 pub use builder::{FunctionBuilder, InstBuilder, IrBuilder};
-pub use cfg::{Block, ControlFlowGraph};
+pub use cfg::{Block, ControlFlowGraph, ExceptionEdge};
 pub use instruction::{BlockId, Instruction, Name, Value};
 pub use ssabuilder::SSABuilder;
 

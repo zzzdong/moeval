@@ -96,6 +96,8 @@ impl<'a> SemanticAnalyzer<'a> {
             Statement::Item(ItemStatement::Enum(EnumItem { .. })) => {
                 unimplemented!("EnumItem not implemented")
             }
+            Statement::Try(try_stmt) => self.analyze_try_statement(try_stmt),
+            Statement::Throw(throw_stmt) => self.analyze_throw_statement(throw_stmt),
         }
     }
 
@@ -232,6 +234,19 @@ impl<'a> SemanticAnalyzer<'a> {
         if let Some(expr) = &return_stmt.value {
             self.analyze_expression(expr)?;
         }
+        Ok(())
+    }
+
+    fn analyze_try_statement(&mut self, try_stmt: &TryStatement) -> Result<(), SemanticError> {
+        self.analyze_block(&try_stmt.body)?;
+        for handler in &try_stmt.handlers {
+            self.analyze_block(&handler.body)?;
+        }
+        Ok(())
+    }
+
+    fn analyze_throw_statement(&mut self, throw_stmt: &ThrowStatement) -> Result<(), SemanticError> {
+        self.analyze_expression(&throw_stmt.value)?;
         Ok(())
     }
 

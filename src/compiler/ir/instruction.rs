@@ -310,6 +310,13 @@ pub enum Instruction {
     },
     Halt,
 
+    // Exception Handling Instructions
+    Throw {
+        tag: Value,
+        payload: Option<Value>,
+    },
+    ThrowRef,
+
     // Range Instructions
     MakeRange {
         op: Opcode,
@@ -327,6 +334,8 @@ impl Instruction {
                 | Instruction::Return { .. }
                 | Instruction::Jump { .. }
                 | Instruction::BrIf { .. }
+                | Instruction::Throw { .. }
+                | Instruction::ThrowRef
         )
     }
 
@@ -458,6 +467,14 @@ impl Instruction {
                 value,
             } => (vec![], vec![*object, *field, *value]),
             Instruction::Halt => (vec![], vec![]),
+            Instruction::Throw { tag, payload } => {
+                let mut used = vec![*tag];
+                if let Some(p) = payload {
+                    used.push(*p);
+                }
+                (vec![], used)
+            }
+            Instruction::ThrowRef => (vec![], vec![]),
         }
     }
 }
@@ -659,6 +676,14 @@ impl std::fmt::Display for Instruction {
                 write!(f, "{object}.{field} = {value}")
             }
             Instruction::Halt => write!(f, "halt"),
+            Instruction::Throw { tag, payload } => {
+                write!(f, "throw {tag}")?;
+                if let Some(p) = payload {
+                    write!(f, ", {p}")?;
+                }
+                Ok(())
+            }
+            Instruction::ThrowRef => write!(f, "throw_ref"),
         }
     }
 }

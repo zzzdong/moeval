@@ -17,7 +17,7 @@ use log::debug;
 use typing::{TypeChecker, TypeContext, TypeError};
 
 use crate::Environment;
-use crate::bytecode::{Module, Register};
+use crate::bytecode::{ExceptionTableEntry, FunctionId, FunctionRange, Module, Register};
 use crate::compiler::ast::syntax::Span;
 use crate::compiler::symbol::SymbolTable;
 use parser::ParseError;
@@ -199,10 +199,21 @@ impl Compiler {
 
         // code generation, IR -> bytecode
         let mut codegen = Codegen::new(&Register::general());
-        let insts = codegen.generate_code(unit.control_flow_graph);
+        let (insts, main_exceptions) = codegen.generate_code(unit.control_flow_graph);
 
         let mut instructions = insts.to_vec();
         let mut debug_instructions = codegen.debug_insts().clone();
+
+        let mut exception_tables = HashMap::new();
+        let mut function_ranges = Vec::new();
+
+        let main_id = FunctionId::new(u32::MAX);
+        exception_tables.insert(main_id, main_exceptions);
+        function_ranges.push(FunctionRange {
+            func_id: main_id,
+            start: 0,
+            end: instructions.len(),
+        });
 
         let mut symtab = HashMap::new();
         // relocate symbol table
@@ -212,8 +223,24 @@ impl Compiler {
             ssa_builder.convert_to_ssa();
 
             let mut codegen = Codegen::new(&Register::general());
-            let insts = codegen.generate_code(func.control_flow_graph);
-            symtab.insert(func.id, offset);
+            let (insts, func_exceptions) = codegen.generate_code(func.control_flow_graph);
+            let func_offset = offset;
+            symtab.insert(func.id, func_offset);
+            let relocated: Vec<ExceptionTableEntry> = func_exceptions
+                .into_iter()
+                .map(|e| ExceptionTableEntry {
+                    try_start: e.try_start + func_offset,
+                    try_end: e.try_end + func_offset,
+                    handler: e.handler + func_offset,
+                    catch_all: e.catch_all,
+                })
+                .collect();
+            exception_tables.insert(func.id, relocated);
+            function_ranges.push(FunctionRange {
+                func_id: func.id,
+                start: func_offset,
+                end: func_offset + insts.len(),
+            });
             offset += insts.len();
             instructions.extend(insts.to_vec());
             debug_instructions.extend(
@@ -230,6 +257,8 @@ impl Compiler {
             symtab,
             instructions: instructions.to_vec(),
             debug_instructions,
+            exception_tables,
+            function_ranges,
         };
 
         Ok(Arc::new(module))

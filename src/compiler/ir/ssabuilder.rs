@@ -585,6 +585,13 @@ impl<'a> SSABuilder<'a> {
                 SSABuilder::rename_use(value, stacks);
             }
             Instruction::Halt => {}
+            Instruction::Throw { tag, payload } => {
+                SSABuilder::rename_use(tag, stacks);
+                if let Some(p) = payload {
+                    SSABuilder::rename_use(p, stacks);
+                }
+            }
+            Instruction::ThrowRef => {}
         }
     }
 

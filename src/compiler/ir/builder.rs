@@ -8,6 +8,7 @@ use crate::compiler::ir::IrUnit;
 
 use super::cfg::ControlFlowGraph;
 use super::instruction::*;
+use super::ExceptionEdge;
 
 pub trait InstBuilder {
     fn module(&self) -> &IrUnit;
@@ -213,6 +214,16 @@ pub trait InstBuilder {
     }
     fn return_(&mut self, value: Option<Value>) {
         self.emit(Instruction::Return { value });
+    }
+
+    fn throw(&mut self, tag: Value, payload: Option<Value>) {
+        self.emit(Instruction::Throw { tag, payload });
+    }
+
+    fn add_exception_edge(&mut self, block: BlockId, edge: ExceptionEdge) {
+        if let Some(block) = self.control_flow_graph_mut().get_block_mut(block) {
+            block.exception_edges.push(edge);
+        }
     }
 
     fn make_iterator(&mut self, iter: Value) -> Value {

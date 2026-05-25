@@ -109,6 +109,8 @@ pub enum Statement {
     While(WhileStatement),
     Loop(LoopStatement),
     If(IfStatement),
+    Try(TryStatement),
+    Throw(ThrowStatement),
     Return(ReturnStatement),
     Expression(ExpressionNode),
 }
@@ -196,6 +198,23 @@ pub struct IfStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStatement {
     pub value: Option<ExpressionNode>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TryStatement {
+    pub body: BlockStatement,
+    pub handlers: Vec<CatchClause>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub pattern: Pattern,
+    pub body: BlockStatement,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrowStatement {
+    pub value: ExpressionNode,
 }
 
 #[derive(Debug, Clone, PartialEq)]
